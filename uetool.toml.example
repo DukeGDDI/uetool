@@ -1,0 +1,20 @@
+# uetool project configuration. Copy to "uetool.toml" at the ROOT of your UE
+# project and COMMIT it (non-secret values only). Per-machine paths and the Steam
+# user belong in uetool.local.toml (untracked).
+
+[project]
+# The project name is auto-detected from the single *.uproject in this folder.
+# Set this only if you need to pin a specific one.
+# name = "MyGame"
+build_config = "Shipping"          # default; override per-run with --config
+stage_dir = "Saved/StagedBuilds"   # UE -stage output (self-contained build)
+
+[steam]
+# Fill these in from your Steamworks app.
+app_id = "0000000"
+depot_win_id = "0000001"
+# depot_mac_id = "0000002"          # uncomment when shipping macOS
+
+# Staged subfolders RunUAT produces under stage_dir (defaults shown).
+win_stage_subdir = "Windows"
+mac_stage_subdir = "Mac"

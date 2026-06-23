@@ -1,0 +1,27 @@
+# Copy to "uetool.local.toml" at the ROOT of your UE project. Do NOT commit it.
+#
+# Machine-WIDE settings are environment variables, not here (they are shared by
+# every project on the machine):
+#   UETOOL_PYTHON      a Python 3.11+ interpreter for the launcher
+#   UETOOL_STEAM_SDK   folder containing steamcmd (standalone or full Steamworks SDK)
+# Secrets are env-only and never written to a file:
+#   UETOOL_STEAM_PASSWORD, UETOOL_APPLE_APP_PASSWORD
+#
+# NOTE: in TOML, backslashes in "double-quoted" strings are escapes — use forward
+# slashes (fine on Windows) or 'single quotes' for literal backslash paths.
+
+[engine]
+# macOS:
+ue_root = "/Users/Shared/Epic Games/UE_5.7"
+# Windows:
+# ue_root = "C:/Program Files/Epic Games/UE_5.7"
+
+[steam]
+user = "your_build_account"   # dedicated Steam build account name
+
+[apple]
+# macOS notarization only. The app-specific password is NOT here — export it as
+# UETOOL_APPLE_APP_PASSWORD (generated at appleid.apple.com).
+# apple_id = "you@example.com"
+# team_id = "XXXXXXXXXX"
+# signing_identity = "Developer ID Application: Your Name (XXXXXXXXXX)"
