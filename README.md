@@ -12,39 +12,106 @@ Install it once, put it on your `PATH`, and point it at any UE project.
 
 ## Install
 
-Clone or download-and-extract this repo anywhere, then add the folder to `PATH`:
+Clone (or download-and-extract) this repo anywhere — it's self-contained, and only
+the folder needs to go on your `PATH`:
 
-```bash
-git clone <repo-url> ~/Workspace/uetool
-# add ~/Workspace/uetool to PATH (zsh example):
-echo 'export PATH="$HOME/Workspace/uetool:$PATH"' >> ~/.zshrc
+```
+git clone https://github.com/DukeGDDI/uetool.git
 ```
 
-Set the **machine-wide** environment variables once (these are shared by every
-project on the machine):
+**Requirements (both platforms):**
+- **Python 3.11+** (uses stdlib `tomllib`).
+- **steamcmd** — Valve's standalone build, or the Steamworks SDK's ContentBuilder.
+- For **macOS** target builds: a Mac with Xcode's command-line tools and a
+  *Developer ID Application* certificate (see the macOS section).
+
+Then follow the setup for your OS below. Both set the same two machine-wide env vars
+(`UETOOL_PYTHON`, `UETOOL_STEAM_SDK`) plus secrets; everything project-specific lives
+in the project's `uetool.toml` / `uetool.local.toml` (see [Per-project setup](#per-project-setup)).
+
+---
+
+## Machine setup — macOS / Linux
+
+1. **Put uetool on `PATH`** (zsh shown — adjust for your shell):
+   ```bash
+   echo 'export PATH="$HOME/Workspace/uetool:$PATH"' >> ~/.zshrc
+   ```
+2. **Python 3.11+** — e.g. `brew install python@3.13`.
+3. **steamcmd** — install Valve's standalone build:
+   ```bash
+   mkdir -p ~/steamcmd && cd ~/steamcmd
+   curl -sSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz | tar xz
+   ./steamcmd.sh +quit        # first run self-updates
+   ```
+   (Linux: use `steamcmd_linux.tar.gz`.)
+4. **Machine-wide env vars** (add to `~/.zshrc`), shared by every project:
+   ```bash
+   export UETOOL_PYTHON=/opt/homebrew/bin/python3.13     # a 3.11+ interpreter
+   export UETOOL_STEAM_SDK="$HOME/steamcmd"              # folder containing steamcmd
+   export UETOOL_APPLE_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx  # macOS notarization only
+   ```
+5. **One-time Steam login** to cache the Steam Guard sentry — see
+   [Steam login](#steam-login-one-time-per-machine).
+6. **macOS signing (for `notarize`):** you need a *Developer ID Application*
+   certificate in your **login keychain** (with Apple's *Developer ID* intermediate),
+   and an Apple ID enrolled in the Apple Developer Program. The `apple_id`, `team_id`,
+   and `signing_identity` go in the project's `uetool.local.toml`; the app-specific
+   password is the `UETOOL_APPLE_APP_PASSWORD` env var above.
+
+Open a new terminal so the changes take effect.
+
+---
+
+## Machine setup — Windows (PC)
+
+1. **Put uetool on `PATH`** — add the `uetool` folder (e.g. `D:\Workspace\uetool`) to
+   your `Path` via *System → Environment Variables* (or `setx`). `uetool.cmd` runs in
+   both `cmd.exe` and PowerShell (no execution-policy issues).
+2. **Python 3.11+** — `winget install Python.Python.3.13` (or from python.org).
+3. **steamcmd** — download and extract Valve's standalone build:
+   - Get **https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip**
+   - Extract to e.g. `C:\steamcmd\`.
+   - Run `C:\steamcmd\steamcmd.exe` once so it self-updates.
+   - **Add `C:\steamcmd` to `Path` as well** (see the note below).
+4. **Machine-wide env vars** (*System → Environment Variables*, or `setx`):
+   ```
+   setx UETOOL_PYTHON python
+   setx UETOOL_STEAM_SDK C:\steamcmd
+   ```
+   (Use the full `python.exe` path if `python` isn't already on `PATH`. The macOS
+   Apple vars don't apply on Windows.)
+5. **One-time Steam login** to cache the Steam Guard sentry — see
+   [Steam login](#steam-login-one-time-per-machine).
+
+> **Important (Windows):** the steamcmd folder goes in **two** places —
+> `UETOOL_STEAM_SDK` (so uetool finds `steamcmd.exe`) **and** `Path` (so
+> `steamcmd.exe` can load its own runtime DLLs). Without it on `Path`, uploads can
+> fail to start even though `UETOOL_STEAM_SDK` is correct.
+
+Open a new terminal (or sign out/in) so the changes take effect.
+
+---
+
+## Steam login (one-time, per machine)
+
+Before the first `upload`/`release`, run the **interactive** login once. It prompts
+for the build account's password and a Steam Guard 2FA code:
 
 ```bash
-export UETOOL_PYTHON=python3.13        # a Python 3.11+ interpreter (needs stdlib tomllib)
-export UETOOL_STEAM_SDK="$HOME/steamcmd" # folder containing steamcmd (standalone or full SDK)
+# macOS / Linux
+~/steamcmd/steamcmd.sh +login <build_account> +quit
+```
+```bat
+:: Windows
+C:\steamcmd\steamcmd.exe +login <build_account> +quit
 ```
 
-Secrets are environment variables too, and are never written to any file:
-
-```bash
-export UETOOL_STEAM_PASSWORD=...        # optional; prefer steamcmd's cached sentry
-export UETOOL_APPLE_APP_PASSWORD=...     # macOS notarization only
-```
-
-> **Windows:** add the `uetool` folder to `PATH`; `uetool.cmd` works from both
-> `cmd.exe` and PowerShell. Set `UETOOL_PYTHON`/`UETOOL_STEAM_SDK` via *System →
-> Environment Variables* (or `setx`).
->
-> **Important (Windows):** also add the **steamcmd folder itself to `PATH`** (e.g.
-> `C:\steamcmd`). On Windows `steamcmd.exe` needs its own directory on `PATH` to
-> locate its runtime DLLs; without it, uploads can fail to start even though
-> `UETOOL_STEAM_SDK` points at the right place. So on a PC you set the steamcmd
-> folder in **two** spots: `UETOOL_STEAM_SDK` (so uetool finds the binary) *and*
-> `PATH` (so the binary finds its DLLs).
+steamcmd then caches a **sentry** file, so every later `uetool upload` (which logs in
+non-interactively) runs **unattended** — you do *not* repeat this per build. Re-run it
+only when the sentry lapses: after a password change, long inactivity, a Steam Guard
+change, or moving/replacing steamcmd. The sentry is per-machine + per-OS-user, so
+**each build machine needs its own one-time login**.
 
 ---
 
@@ -52,9 +119,11 @@ export UETOOL_APPLE_APP_PASSWORD=...     # macOS notarization only
 
 At the **root of your UE project** (next to `YourGame.uproject`):
 
-1. Copy the two config templates from this repo and fill them in:
-   - `uetool.toml` — **committed**, non-secret (app id, depot ids, build config).
-   - `uetool.local.toml` — **untracked**, per-machine (engine path, Steam user, Apple ids).
+1. Copy the two templates from this repo and fill them in:
+   - `uetool.toml` — **committed**, non-secret (Steam `app_id`, depot ids, build config).
+   - `uetool.local.toml` — **untracked**, per-machine (`ue_root`; Steam `user`; Apple ids).
+     `ue_root` is platform-specific, e.g. `"/Users/Shared/Epic Games/UE_5.7"` (macOS)
+     or `"C:/Program Files/Epic Games/UE_5.7"` (Windows — forward slashes).
 2. Add to the project's ignore rules (`.gitignore` / `.dvignore`):
    ```
    uetool.local.toml
@@ -84,11 +153,12 @@ uetool package --platform mac --no-bump  # package without bumping
 uetool notarize                          # sign + notarize + staple the staged macOS .app
 uetool upload --platform mac             # push the staged build to Steam
 uetool release --platform mac            # bump -> package -> [notarize on mac] -> upload
-uetool -P ~/games/MyGame release         # operate on a project elsewhere
+uetool -P ~/games/MyGame release --platform win   # operate on a project elsewhere
 ```
 
-`--dry-run` prints every external command without executing it (and still
-validates config) — the safe way to verify wiring with no engine or Steam access.
+`--platform` defaults to the host (`win` on Windows, `mac` on a Mac). `--dry-run`
+prints every external command without executing it (and still validates config) — the
+safe way to verify wiring with no engine or Steam access.
 
 Uploading **never** auto-promotes a build to a live Steam branch; that stays a
 deliberate step on the Steamworks site.
@@ -112,7 +182,7 @@ Files the tool reads/writes at the **project root**:
 | `uetool.toml` | yes | committed config |
 | `uetool.local.toml` | no | per-machine config |
 | `.build_number` | **yes** | monotonic build counter |
-| `.version` | no | last stamped `vX.Y.Z.N` (generated) |
+| `.version` | no | full build label `vX.Y.Z.N` (generated) |
 | `.uetool/` | no | rendered VDFs, notarization zip, steamcmd output (generated) |
 
 `steamcmd` is resolved from `UETOOL_STEAM_SDK` per-OS (standalone `steamcmd.sh`/
@@ -164,10 +234,9 @@ resolves the project root (`-P`, default cwd) and dispatches to `core`.
   *Invalid*. `uetool` signs every nested `.dylib`/`.so` individually (deepest first)
   then seals the `.app` last.
 - **macOS builds must be built on a Mac** (Apple toolchain) with a *Developer ID
-  Application* certificate in the login keychain plus the `Developer ID` intermediate.
-- **steamcmd auth:** do one interactive `steamcmd +login <user> +quit` to cache the
-  Steam Guard sentry; afterwards uploads run unattended. A depot must be **created
-  and published** under the app before an upload to it will succeed.
+  Application* certificate in the login keychain plus the *Developer ID* intermediate.
+- **Steam depots:** the target depot must be **created and published** under the app
+  before an upload to it will succeed (otherwise steamcmd reports *Access Denied*).
 - **TOML backslashes:** in double-quoted strings `\` is an escape — use forward
   slashes or 'single quotes' for Windows paths.
 
