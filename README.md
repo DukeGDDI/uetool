@@ -135,8 +135,7 @@ ProjectVersion in Config/DefaultGame.ini   (authored "vX.Y.Z" by hand; never car
 ```
 uetool/
 ├── uetool            bash launcher (macOS/Linux)
-├── uetool.cmd        Windows launcher (cmd + PowerShell)
-├── uetool.ps1        PowerShell-native variant
+├── uetool.cmd        Windows launcher (works in cmd AND PowerShell)
 ├── uetool.py         Python entry (sets sys.path, runs core.cli)
 └── core/             the package (host detection, config, version, package, steam, notarize)
     └── steam/        VDF templates (@TOKEN@ placeholders)
