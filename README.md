@@ -35,9 +35,16 @@ export UETOOL_STEAM_PASSWORD=...        # optional; prefer steamcmd's cached sen
 export UETOOL_APPLE_APP_PASSWORD=...     # macOS notarization only
 ```
 
-> **Windows:** add the folder to `PATH`; `uetool.cmd` works from both `cmd.exe`
-> and PowerShell. Set `UETOOL_PYTHON`/`UETOOL_STEAM_SDK` via *System → Environment
-> Variables* (or `setx`).
+> **Windows:** add the `uetool` folder to `PATH`; `uetool.cmd` works from both
+> `cmd.exe` and PowerShell. Set `UETOOL_PYTHON`/`UETOOL_STEAM_SDK` via *System →
+> Environment Variables* (or `setx`).
+>
+> **Important (Windows):** also add the **steamcmd folder itself to `PATH`** (e.g.
+> `C:\steamcmd`). On Windows `steamcmd.exe` needs its own directory on `PATH` to
+> locate its runtime DLLs; without it, uploads can fail to start even though
+> `UETOOL_STEAM_SDK` points at the right place. So on a PC you set the steamcmd
+> folder in **two** spots: `UETOOL_STEAM_SDK` (so uetool finds the binary) *and*
+> `PATH` (so the binary finds its DLLs).
 
 ---
 
