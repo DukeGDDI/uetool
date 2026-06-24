@@ -75,3 +75,12 @@ def upload(cfg: Config, target: str, dry_run: bool) -> None:
 
     cmd = [cfg.steamcmd, *login, "+run_app_build", str(app_vdf.resolve()), "+quit"]
     run(cmd, dry_run)
+
+    if not dry_run:
+        # The upload does NOT promote the build — that's a deliberate manual step.
+        bar = "=" * 72
+        print(f"\n{bar}")
+        print(f"Uploaded {version} to app {cfg.app_id}, depot {depot_id}.")
+        print("This build is NOT live yet. Set it live on a branch in Steamworks:")
+        print(f"  https://partner.steamgames.com/apps/builds/{cfg.app_id}")
+        print(bar)
