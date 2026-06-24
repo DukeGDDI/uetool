@@ -1,4 +1,5 @@
 """Packaging via Unreal's RunUAT BuildCookRun."""
+from . import version as ver
 from .config import Config
 from .paths import host_is_windows, run, runuat_path
 
@@ -34,4 +35,21 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool) -> None:
     if runuat.suffix.lower() == ".bat" and host_is_windows():
         cmd = ["cmd", "/c"] + cmd
 
-    run(cmd, dry_run)
+    base_version = ver.base(cfg)
+    full_version = ver.compute(cfg)  # base + build counter
+
+    if dry_run:
+        print(f"# would stamp ProjectVersion={full_version} for the cook, "
+              f"then restore the base {base_version}")
+        run(cmd, dry_run)
+        return
+
+    # Stamp the full build version into DefaultGame.ini so the cook embeds it,
+    # then restore the authored base so source control never accumulates ".N".
+    # The finally guard restores even if the build fails or is interrupted.
+    ver.stamp(cfg, full_version)
+    cfg.version_file.write_text(f"{full_version}\n", encoding="utf-8")
+    try:
+        run(cmd, dry_run)
+    finally:
+        ver.stamp(cfg, base_version)

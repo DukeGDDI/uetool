@@ -71,7 +71,7 @@ usage: uetool [-P PATH] {bump,package,upload,notarize,release} ...
 Run from inside the project, or point at it with `-P`:
 
 ```bash
-uetool bump                              # stamp ProjectVersion only
+uetool bump                              # advance the build counter only (writes .version)
 uetool package --platform mac            # bump + RunUAT package
 uetool package --platform mac --no-bump  # package without bumping
 uetool notarize                          # sign + notarize + staple the staged macOS .app
@@ -116,13 +116,15 @@ Files the tool reads/writes at the **project root**:
 ## How it works
 
 ```
-ProjectVersion in Config/DefaultGame.ini   (authored "vX.Y.Z" by hand)
-        │  bump(): increment .build_number (monotonic), write "vX.Y.Z.N" back
+ProjectVersion in Config/DefaultGame.ini   (authored "vX.Y.Z" by hand; never carries .N in source)
+        │  bump(): increment .build_number (monotonic); write .version = "vX.Y.Z.N"
+        ▼            (DefaultGame.ini is NOT modified by bump)
+   <project>/.version  ("vX.Y.Z.N")  ── full build label = base + counter
+        │  package(): stamp "vX.Y.Z.N" into the .ini -> RunUAT -cook -build -stage -pak
+        │             (NO -archive) -> restore the base "vX.Y.Z" (finally-guarded)
         ▼
-   <project>/.version  ("vX.Y.Z.N")  ── single source of truth for the build label
-        │  package(): RunUAT BuildCookRun -cook -build -stage -pak  (NO -archive)
-        ▼
-   Saved/StagedBuilds/<Windows|Mac>/   (self-contained, shippable build)
+   Saved/StagedBuilds/<Windows|Mac>/   (self-contained build embedding vX.Y.Z.N;
+                                        source DefaultGame.ini stays vX.Y.Z)
         │  notarize() [mac only]: sign inside-out -> notarytool submit -> staple
         │  upload(): render VDFs into .uetool/, run steamcmd +run_app_build
         ▼
