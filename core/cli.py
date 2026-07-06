@@ -36,6 +36,8 @@ def _add_common(sp, allow_no_bump=False):
     if allow_no_bump:
         sp.add_argument("--no-bump", action="store_true",
                         help="Skip the version bump for this run.")
+        sp.add_argument("--no-bootstrap", action="store_true",
+                        help="Skip building the editor target even if it's missing.")
 
 
 def main() -> int:
@@ -46,6 +48,10 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     _add_common(sub.add_parser("bump", help="Increment build number and stamp ProjectVersion."))
+    bootstrap_p = sub.add_parser(
+        "bootstrap", help="Build the editor target for a fresh checkout (no cook/stage).")
+    bootstrap_p.add_argument("--dry-run", action="store_true",
+                             help="Print external commands instead of executing them.")
     _add_common(sub.add_parser("package", help="Package the project via RunUAT."), allow_no_bump=True)
     _add_common(sub.add_parser("upload", help="Upload the staged build to Steam."))
     _add_common(sub.add_parser("notarize", help="Sign + notarize + staple the staged macOS .app."))
@@ -58,15 +64,21 @@ def main() -> int:
         raise SystemExit(f"Project root not found: {project_root}")
 
     cfg = config.load(project_root)
-    build_config = args.build_config or cfg.build_config
+    # bootstrap has no --config; other commands do (may be None -> fall back to toml).
+    build_config = getattr(args, "build_config", None) or cfg.build_config
 
     if args.command == "bump":
         print(f"Version: {version_mod.bump(cfg)}")
 
+    elif args.command == "bootstrap":
+        if not package_mod.bootstrap(cfg, args.dry_run):
+            print("Editor target already built; nothing to bootstrap.")
+
     elif args.command == "package":
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
-        package_mod.package(cfg, args.platform, build_config, args.dry_run)
+        package_mod.package(cfg, args.platform, build_config, args.dry_run,
+                            bootstrap_if_needed=not args.no_bootstrap)
 
     elif args.command == "upload":
         steam_mod.upload(cfg, args.platform, args.dry_run)
@@ -77,7 +89,8 @@ def main() -> int:
     elif args.command == "release":
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
-        package_mod.package(cfg, args.platform, build_config, args.dry_run)
+        package_mod.package(cfg, args.platform, build_config, args.dry_run,
+                            bootstrap_if_needed=not args.no_bootstrap)
         # macOS builds must be signed + notarized before they leave the machine.
         if args.platform == "mac":
             notarize_mod.notarize(cfg, args.dry_run)

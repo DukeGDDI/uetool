@@ -140,14 +140,15 @@ there is nothing project-specific to hardcode.
 ## Usage
 
 ```
-usage: uetool [-P PATH] {bump,package,upload,notarize,release} ...
-              [--platform win|mac] [--config Shipping] [--dry-run] [--no-bump]
+usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,release} ...
+              [--platform win|mac] [--config Shipping] [--dry-run] [--no-bump] [--no-bootstrap]
 ```
 
 Run from inside the project, or point at it with `-P`:
 
 ```bash
 uetool bump                              # advance the build counter only (writes .version)
+uetool bootstrap                         # build the editor target (headless; for a fresh checkout)
 uetool package --platform mac            # bump + RunUAT package
 uetool package --platform mac --no-bump  # package without bumping
 uetool notarize                          # sign + notarize + staple the staged macOS .app
@@ -160,8 +161,21 @@ uetool -P ~/games/MyGame release --platform win   # operate on a project elsewhe
 prints every external command without executing it (and still validates config) — the
 safe way to verify wiring with no engine or Steam access.
 
-Uploading **never** auto-promotes a build to a live Steam branch; that stays a
-deliberate step on the Steamworks site.
+### Fresh checkout / CI
+
+A C++ project that has never been built has no `Binaries/<host>/<Project>Editor.target`
+receipt, and RunUAT's cook step reads it before doing anything — so a raw `package`
+would fail with *"Could not find file …Editor.target"*. (Normally you'd first open the
+project in the editor, or build it in Rider / Visual Studio.)
+
+`package` and `release` handle this automatically: if the receipt is missing they run
+**`bootstrap`** first, which builds the editor target headlessly via UnrealBuildTool
+(`Build.bat`/`Build.sh`) — no manual pre-build, no `.sln`/Xcode project needed. It's a
+no-op once the project has been built, so a CI agent can run `uetool release` on a clean
+checkout and it just works. Pass `--no-bootstrap` to skip it (e.g. when the editor target
+is already cached), or run `uetool bootstrap` on its own as an explicit CI step.
+
+> **IMPORTANT** Uploading **never** auto-promotes a build to a live Steam branch; that stays a deliberate step on the Steamworks site.
 
 ---
 

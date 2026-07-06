@@ -28,6 +28,17 @@ def runuat_path(ue_root: Path) -> Path:
     return Path(ue_root) / "Engine" / "Build" / "BatchFiles" / name
 
 
+def build_script_path(ue_root: Path) -> Path:
+    """UnrealBuildTool's Build script for the *host*, used to build the editor
+    target (Build.bat on Windows, Mac/Build.sh on macOS, Linux/Build.sh else)."""
+    base = Path(ue_root) / "Engine" / "Build" / "BatchFiles"
+    if host_is_windows():
+        return base / "Build.bat"
+    if host_is_macos():
+        return base / "Mac" / "Build.sh"
+    return base / "Linux" / "Build.sh"
+
+
 def steamcmd_for_sdk(sdk: Path | None) -> str:
     """Resolve the steamcmd executable from UETOOL_STEAM_SDK, per host OS.
 
