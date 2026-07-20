@@ -39,6 +39,9 @@ def _add_common(sp, allow_no_bump=False):
                         help="Skip the version bump for this run.")
         sp.add_argument("--no-bootstrap", action="store_true",
                         help="Skip building the editor target even if it's missing.")
+        sp.add_argument("--clean", action="store_true",
+                        help="Wipe Binaries/Intermediate/Cooked/staged output first "
+                             "(forces a from-scratch build + cook).")
 
 
 def main() -> int:
@@ -85,7 +88,7 @@ def main() -> int:
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
         package_mod.package(cfg, args.platform, build_config, args.dry_run,
-                            bootstrap_if_needed=not args.no_bootstrap)
+                            bootstrap_if_needed=not args.no_bootstrap, clean=args.clean)
 
     elif args.command == "upload":
         steam_mod.upload(cfg, args.platform, args.dry_run)
@@ -100,7 +103,7 @@ def main() -> int:
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
         package_mod.package(cfg, args.platform, build_config, args.dry_run,
-                            bootstrap_if_needed=not args.no_bootstrap)
+                            bootstrap_if_needed=not args.no_bootstrap, clean=args.clean)
         # macOS builds must be signed + notarized before they leave the machine.
         if args.platform == "mac":
             notarize_mod.notarize(cfg, args.dry_run)

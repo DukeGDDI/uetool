@@ -141,7 +141,8 @@ there is nothing project-specific to hardcode.
 
 ```
 usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release} ...
-              [--platform win|mac] [--config Shipping] [--dry-run] [--no-bump] [--no-bootstrap]
+              [--platform win|mac] [--config Shipping] [--dry-run]
+              [--no-bump] [--no-bootstrap] [--clean]
 ```
 
 Run from inside the project, or point at it with `-P`:
@@ -196,6 +197,20 @@ plugin enabled (UE 5.5+: *Pixel Streaming 2*) so it's compiled into the build �
 packages and zips, but it can't add the plugin. The streaming launch args
 (`-PixelStreamingURL`, `-RenderOffScreen`, …) are supplied by Arcware at runtime, not baked
 into the build.
+
+### Clean rebuilds (`--clean`)
+
+`package` builds and cooks **incrementally** (RunUAT `-build`, plus `-nocompileeditor`), so
+after a project change that must land in the shipped build — most commonly **enabling a
+plugin** — an incremental package can miss it, and `archive`/`upload` would then ship a
+stale build. `package --clean` (also on `release`) wipes `Binaries/`, `Intermediate/`,
+`Saved/Cooked/`, and the target's staged output first, forcing a from-scratch compile +
+cook. Deleting `Binaries/` also drops the editor `.target`, so `bootstrap` rebuilds the
+editor with the change before cooking.
+
+```bash
+uetool package --platform win --clean     # after enabling a plugin, or any "why isn't it in the build?" moment
+```
 
 > **IMPORTANT** Uploading **never** auto-promotes a build to a live Steam branch; that stays a deliberate step on the Steamworks site.
 
