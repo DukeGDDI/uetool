@@ -22,6 +22,7 @@ from . import (
     package as package_mod,
     steam as steam_mod,
     notarize as notarize_mod,
+    archive as archive_mod,
 )
 from .paths import host_platform
 
@@ -54,6 +55,12 @@ def main() -> int:
                              help="Print external commands instead of executing them.")
     _add_common(sub.add_parser("package", help="Package the project via RunUAT."), allow_no_bump=True)
     _add_common(sub.add_parser("upload", help="Upload the staged build to Steam."))
+    archive_p = sub.add_parser(
+        "archive", help="Zip the staged build for non-Steam distribution (e.g. pixel streaming).")
+    archive_p.add_argument("--platform", choices=["win", "mac"], default=host_platform(),
+                           help="Which staged build to zip (defaults to the host).")
+    archive_p.add_argument("--dry-run", action="store_true",
+                           help="Print what would happen instead of writing the zip.")
     _add_common(sub.add_parser("notarize", help="Sign + notarize + staple the staged macOS .app."))
     _add_common(sub.add_parser("release", help="bump -> package -> [notarize on mac] -> upload."), allow_no_bump=True)
 
@@ -82,6 +89,9 @@ def main() -> int:
 
     elif args.command == "upload":
         steam_mod.upload(cfg, args.platform, args.dry_run)
+
+    elif args.command == "archive":
+        archive_mod.archive(cfg, args.platform, args.dry_run)
 
     elif args.command == "notarize":
         notarize_mod.notarize(cfg, args.dry_run)

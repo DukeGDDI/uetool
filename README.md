@@ -140,7 +140,7 @@ there is nothing project-specific to hardcode.
 ## Usage
 
 ```
-usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,release} ...
+usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release} ...
               [--platform win|mac] [--config Shipping] [--dry-run] [--no-bump] [--no-bootstrap]
 ```
 
@@ -153,6 +153,7 @@ uetool package --platform mac            # bump + RunUAT package
 uetool package --platform mac --no-bump  # package without bumping
 uetool notarize                          # sign + notarize + staple the staged macOS .app
 uetool upload --platform mac             # push the staged build to Steam
+uetool archive --platform win            # zip the staged build for non-Steam distribution
 uetool release --platform mac            # bump -> package -> [notarize on mac] -> upload
 uetool -P ~/games/MyGame release --platform win   # operate on a project elsewhere
 ```
@@ -174,6 +175,27 @@ project in the editor, or build it in Rider / Visual Studio.)
 no-op once the project has been built, so a CI agent can run `uetool release` on a clean
 checkout and it just works. Pass `--no-bootstrap` to skip it (e.g. when the editor target
 is already cached), or run `uetool bootstrap` on its own as an explicit CI step.
+
+### Non-Steam distribution (`archive`)
+
+Some hosts take a packaged build directly instead of a Steam depot — **Arcware pixel
+streaming**, itch.io, a plain download. `uetool archive --platform <win|mac>` zips the
+staged build into `.uetool/dist/<Project>-<version>-<platform>.zip`, with the executable
+at the **zip root** (it zips the *contents* of the staged folder), names the file with
+the current version, and prints the path. It streams large `.pak` files (no memory blow-up
+on multi-GB builds), and preserves the Unix exec bit and symlinks so Linux/macOS builds
+stay intact.
+
+```bash
+uetool package --platform win     # produce Saved/StagedBuilds/Windows
+uetool archive --platform win     # -> .uetool/dist/<Project>-vX.Y.Z.N-win.zip, ready to upload
+```
+
+For **Arcware pixel streaming** specifically, the project must have the **Pixel Streaming**
+plugin enabled (UE 5.5+: *Pixel Streaming 2*) so it's compiled into the build — uetool
+packages and zips, but it can't add the plugin. The streaming launch args
+(`-PixelStreamingURL`, `-RenderOffScreen`, …) are supplied by Arcware at runtime, not baked
+into the build.
 
 > **IMPORTANT** Uploading **never** auto-promotes a build to a live Steam branch; that stays a deliberate step on the Steamworks site.
 
