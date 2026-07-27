@@ -142,7 +142,7 @@ there is nothing project-specific to hardcode.
 ```
 usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release} ...
               [--platform win|mac] [--config Shipping] [--dry-run]
-              [--no-bump] [--no-bootstrap] [--clean]
+              [--no-bump] [--no-bootstrap] [--clean] [--custom-config NAME]
 ```
 
 Run from inside the project, or point at it with `-P`:
@@ -197,6 +197,40 @@ plugin enabled (UE 5.5+: *Pixel Streaming 2*) so it's compiled into the build �
 packages and zips, but it can't add the plugin. The streaming launch args
 (`-PixelStreamingURL`, `-RenderOffScreen`, …) are supplied by Arcware at runtime, not baked
 into the build.
+
+### Per-host ini layers (`--custom-config`)
+
+A build for a streaming host usually needs settings that would be *wrong* on a storefront
+— a capped framerate, audio that keeps playing while the window is unfocused, quality
+pinned instead of benchmarked. Unreal supports this without a second branch or a second
+`.uproject`: put the overrides in `<project>/Config/Custom/<Name>/Default*.ini`, which the
+engine layers directly above the base `Config/Default*.ini`, but **only** when
+`-CustomConfig=<Name>` is passed. Without the flag the layer is not even looked for, so the
+storefront build is unaffected by construction.
+
+`--custom-config NAME` passes that flag to RunUAT; UAT carries it through cook and stage,
+so one flag covers the whole package.
+
+```bash
+# streaming build: base ini + Config/Custom/Arcware overrides
+uetool package --platform win --custom-config Arcware
+uetool archive --platform win
+
+# storefront build: base ini only — no flag, nothing to remember
+uetool release --platform win
+```
+
+It is deliberately **not** settable in `uetool.toml`. A committed default would apply
+silently to every build including the ones headed for a depot, which is exactly the mistake
+the layer exists to prevent — so it is opt-in per run.
+
+For the same reason `release` **refuses** `--custom-config`: that command ends in a Steam
+upload, and a custom layer leaves no visible trace in the staged output, so the mistake
+would be silent. Use `package` + `archive` instead (the error message says so).
+
+> Note: `archive` names the zip `<Project>-<version>-<platform>.zip` with no layer suffix,
+> so a streaming zip and a storefront zip of the same version collide. Move or rename one
+> before building the other.
 
 ### Clean rebuilds (`--clean`)
 

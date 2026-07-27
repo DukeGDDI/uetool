@@ -76,7 +76,8 @@ def bootstrap(cfg: Config, dry_run: bool, force: bool = False) -> bool:
 
 
 def package(cfg: Config, target: str, build_config: str, dry_run: bool,
-            bootstrap_if_needed: bool = True, clean: bool = False) -> None:
+            bootstrap_if_needed: bool = True, clean: bool = False,
+            custom_config: str | None = None) -> None:
     if cfg.ue_root is None:
         raise SystemExit(
             "Engine path not set. Add [engine] ue_root to uetool.local.toml "
@@ -110,6 +111,17 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool,
         "-cook", "-build", "-stage", "-pak",
         "-nocompileeditor", "-utf8output",
     ]
+
+    # Custom ini layer: UE stacks <project>/Config/Custom/<name>/Default*.ini directly
+    # above the base Config/Default*.ini, but ONLY when -CustomConfig is passed (the
+    # layer is flagged RequiresCustomConfig). UAT carries the value through cook and
+    # stage, so one flag covers the whole package.
+    #
+    # This is deliberately not readable from uetool.toml: a committed default would
+    # apply silently to every build, including the ones headed for a storefront, which
+    # is precisely the mistake the layer exists to prevent. Opt in per run.
+    if custom_config:
+        cmd.append(f"-CustomConfig={custom_config}")
 
     # On Windows, .bat files must be launched through cmd.exe.
     if runuat.suffix.lower() == ".bat" and host_is_windows():
