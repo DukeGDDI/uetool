@@ -2,6 +2,7 @@
 import shutil
 from pathlib import Path
 
+from . import inioverlay
 from . import version as ver
 from .config import Config
 from .paths import build_script_path, host_is_windows, host_platform, run, runuat_path
@@ -112,16 +113,10 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool,
         "-nocompileeditor", "-utf8output",
     ]
 
-    # Custom ini layer: UE stacks <project>/Config/Custom/<name>/Default*.ini directly
-    # above the base Config/Default*.ini, but ONLY when -CustomConfig is passed (the
-    # layer is flagged RequiresCustomConfig). UAT carries the value through cook and
-    # stage, so one flag covers the whole package.
-    #
-    # This is deliberately not readable from uetool.toml: a committed default would
-    # apply silently to every build, including the ones headed for a storefront, which
-    # is precisely the mistake the layer exists to prevent. Opt in per run.
-    if custom_config:
-        cmd.append(f"-CustomConfig={custom_config}")
+    # NOTE: -CustomConfig is deliberately NOT passed to RunUAT. UE's native custom-config
+    # layer cannot be read by a packaged Shipping build made with an installed engine (see
+    # inioverlay.py for the three engine reasons), so the flag would only stage ini files
+    # that nothing reads. The layer is merged into the base config below instead.
 
     # On Windows, .bat files must be launched through cmd.exe.
     if runuat.suffix.lower() == ".bat" and host_is_windows():
@@ -131,10 +126,17 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool,
     full_version = ver.compute(cfg)  # base + build counter
 
     if dry_run:
+        if custom_config:
+            inioverlay.apply(cfg.uproject.parent, custom_config, dry_run=True)
         print(f"# would stamp ProjectVersion={full_version} for the cook, "
               f"then restore the base {base_version}")
         run(cmd, dry_run)
         return
+
+    # Fold the custom ini layer in before stamping the version. Both touch DefaultGame.ini,
+    # and restoring the overlay last rewrites that file verbatim — which subsumes the
+    # version restore rather than fighting it.
+    overlaid = inioverlay.apply(cfg.uproject.parent, custom_config, dry_run) if custom_config else {}
 
     # Stamp the full build version into DefaultGame.ini so the cook embeds it,
     # then restore the authored base so source control never accumulates ".N".
@@ -145,3 +147,4 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool,
         run(cmd, dry_run)
     finally:
         ver.stamp(cfg, base_version)
+        inioverlay.restore(overlaid)

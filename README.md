@@ -202,14 +202,26 @@ into the build.
 
 A build for a streaming host usually needs settings that would be *wrong* on a storefront
 — a capped framerate, audio that keeps playing while the window is unfocused, quality
-pinned instead of benchmarked. Unreal supports this without a second branch or a second
-`.uproject`: put the overrides in `<project>/Config/Custom/<Name>/Default*.ini`, which the
-engine layers directly above the base `Config/Default*.ini`, but **only** when
-`-CustomConfig=<Name>` is passed. Without the flag the layer is not even looked for, so the
-storefront build is unaffected by construction.
+pinned instead of benchmarked. Put those overrides in
+`<project>/Config/Custom/<Name>/Default*.ini` and pass `--custom-config NAME`; uetool
+merges the layer into the base `Config/Default*.ini` for the duration of the cook and
+restores the originals afterwards, the same borrow-and-restore the version stamp uses.
+Without the flag nothing is merged, so the storefront build is unaffected by construction.
 
-`--custom-config NAME` passes that flag to RunUAT; UAT carries it through cook and stage,
-so one flag covers the whole package.
+Matching keys are replaced in place, new keys are appended to their section, and sections
+the base lacks are appended at the end. Restore is byte-exact and runs from a `finally`, so
+a failed or interrupted build still leaves your tracked config clean.
+
+> **Why not Unreal's own `-CustomConfig`?** The engine has this exact feature — it layers
+> `Config/Custom/<Name>/` above the base when `-CustomConfig=<Name>` is passed — but it
+> **cannot work in a packaged Shipping build made with a Launcher (installed) engine**, and
+> it fails *silently*: the files stage, and nothing reads them. UBT bakes the `CUSTOM_CONFIG`
+> define only for targets not using the shared build environment, `BuildEnvironment` is
+> forced to `Shared` whenever the engine is installed, and forcing `Unique` is rejected
+> outright ("Targets with a unique build environment cannot be built with an installed
+> engine"). The command-line fallback is compiled out of Shipping too
+> (`ALLOW_INI_OVERRIDE_FROM_COMMANDLINE` is `(UE_SERVER || !UE_BUILD_SHIPPING)`). Hence the
+> merge. uetool does **not** pass `-CustomConfig` to RunUAT.
 
 ```bash
 # streaming build: base ini + Config/Custom/Arcware overrides
