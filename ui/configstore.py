@@ -103,6 +103,17 @@ class ProjectConfig:
         v = self.get(name)
         return is_placeholder(v) if FIELDS[name].kind == "id" else v.strip() == ""
 
+    def apply_now(self, name: str, value: str) -> None:
+        """Save one field immediately, leaving any other pending edits pending."""
+        others = {k: v for k, v in self._edits.items() if k != name}
+        self._edits = {}
+        self.set(name, value)
+        try:
+            self.save()
+        finally:
+            for k, v in others.items():
+                self.set(k, v)
+
     # -- validation --------------------------------------------------------
     def problems(self) -> dict[str, tuple[str, str]]:
         """{field: (level, message)}; level is 'error' (won't save) or 'warn'."""

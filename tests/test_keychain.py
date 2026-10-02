@@ -2,7 +2,7 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
-from ui import secrets
+from ui import keychain
 
 
 class Mem(KeyringBackend):
@@ -30,11 +30,11 @@ def backend():
 
 
 def test_roundtrip_and_env():
-    secrets.set("steam", "bob", "pw1")
-    secrets.set("apple", "a@b.c", "pw2")
-    assert secrets.has("steam", "bob") and not secrets.has("steam", "alice")
-    assert secrets.env_for("bob", "a@b.c") == {
+    keychain.set("steam", "bob", "pw1")
+    keychain.set("apple", "a@b.c", "pw2")
+    assert keychain.has("steam", "bob") and not keychain.has("steam", "alice")
+    assert keychain.env_for("bob", "a@b.c") == {
         "UETOOL_STEAM_PASSWORD": "pw1", "UETOOL_APPLE_APP_PASSWORD": "pw2"}
-    assert secrets.env_for("alice", "") == {}
-    secrets.delete("steam", "bob")
-    assert not secrets.has("steam", "bob")
+    assert keychain.env_for("alice", "") == {}
+    keychain.delete("steam", "bob")
+    assert not keychain.has("steam", "bob")

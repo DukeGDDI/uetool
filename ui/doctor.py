@@ -14,7 +14,7 @@ from pathlib import Path
 
 from core.paths import host_platform, runuat_path, steamcmd_for_sdk
 
-from . import projectstate, secrets
+from . import keychain, projectstate
 from .configstore import ProjectConfig
 
 PASS, FIX, FAIL, NA = "pass", "fix", "fail", "na"
@@ -90,7 +90,7 @@ def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
     environ = os.environ if environ is None else environ
     py_version = py_version or sys.version_info[:3]
     engines = find_engines(host) if engines is None else engines
-    has_secret = has_secret or secrets.has
+    has_secret = has_secret or keychain.has
     out: list[CheckResult] = []
 
     def add(key, name, status, detail, action=None):

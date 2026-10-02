@@ -95,3 +95,12 @@ def test_value_in_other_file_is_written_where_it_lives(project):
     cfg.set("app_id", "888")
     cfg.save()
     assert tomllib.loads((project / LOCAL).read_text())["steam"]["app_id"] == "888"
+
+
+def test_apply_now_keeps_other_edits_pending(project):
+    cfg = ProjectConfig(project)
+    cfg.set("app_id", "42")
+    cfg.apply_now("ue_root", "/x/UE_5.7")
+    assert tomllib.loads((project / LOCAL).read_text())["engine"]["ue_root"] == "/x/UE_5.7"
+    assert cfg.dirty_fields() == {"app_id"} and cfg.get("app_id") == "42"
+    assert tomllib.loads((project / BASE).read_text())["steam"]["app_id"] == "0000000"
