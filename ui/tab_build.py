@@ -79,6 +79,7 @@ class BuildTab(QWidget):
             buttons.addWidget(b)
         buttons.addStretch()
         self.state = muted("Idle")
+        self.state.setWordWrap(False)
         buttons.addWidget(self.state)
         outer.addLayout(buttons)
         self.dry_hint = muted()

@@ -56,6 +56,8 @@ class SecretRow(QWidget):
 
 
 class ConfigTab(QWidget):
+    APPLE = ("apple_id", "team_id", "signing_identity")
+
     def __init__(self, ctx: Context):
         super().__init__()
         self.ctx = ctx
@@ -81,15 +83,11 @@ class ConfigTab(QWidget):
         self._add(f2, "steam_user", "Steam build account")
         self.steam_pw = SecretRow("steam", ctx, lambda: self.value("steam_user"))
         f2.addRow("Steam password", self.steam_pw)
-        self.apple_box = QWidget()
-        f3 = QFormLayout(self.apple_box)
-        f3.setContentsMargins(0, 0, 0, 0)
-        self._add(f3, "apple_id", "Apple ID")
-        self._add(f3, "team_id", "Apple team ID")
-        self._add(f3, "signing_identity", "Signing identity")
+        self._add(f2, "apple_id", "Apple ID (macOS)")
+        self._add(f2, "team_id", "Apple team ID (macOS)")
+        self._add(f2, "signing_identity", "Signing identity (macOS)")
         self.apple_pw = SecretRow("apple", ctx, lambda: self.value("apple_id"))
-        f3.addRow("App-specific password", self.apple_pw)
-        f2.addRow(self.apple_box)
+        f2.addRow("App-specific password (macOS)", self.apple_pw)
         self.apple_note = muted("Apple notarization settings apply to macOS builds only.")
         f2.addRow(self.apple_note)
         outer.addWidget(local)
@@ -205,12 +203,15 @@ class ConfigTab(QWidget):
             w.style().polish(w)
             msg = self.msgs[name]
             msg.setText(text)
+            msg.setVisible(bool(text))
             set_role(msg, "err" if lvl == "error" else "warn")
         mac = self.ctx.host == "mac"
-        self.apple_box.setEnabled(enabled and mac)
+        for n in self.APPLE:
+            self.edits[n].setEnabled(enabled and mac)
         self.apple_note.setVisible(not mac)
+        self.steam_pw.setEnabled(enabled)
+        self.apple_pw.setEnabled(enabled and mac)
         for row in (self.steam_pw, self.apple_pw):
-            row.setEnabled(enabled)
             row.update_state()
         dirty = bool(cfg and cfg.dirty)
         self.save_btn.setEnabled(enabled and dirty and cfg.can_save())

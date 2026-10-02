@@ -3,14 +3,9 @@ import textwrap
 import time
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QTimer
 
 from ui.runner import Runner, child_env, descendants
-
-
-@pytest.fixture(scope="module")
-def app():
-    return QCoreApplication.instance() or QCoreApplication([])
 
 
 def run_to_end(runner, argv, cancel_after_ms=None, cwd=None, env=None, timeout_ms=15000):

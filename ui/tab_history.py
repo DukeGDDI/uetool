@@ -22,7 +22,7 @@ class HistoryTab(QWidget):
         self.counter = QLabel("—")
         self.ini = QLabel("—")
         for label, w in (("Last built version", self.version), ("Build counter", self.counter),
-                         ("ProjectVersion in DefaultGame.ini", self.ini)):
+                         ("DefaultGame.ini version", self.ini)):
             col = QVBoxLayout()
             col.addWidget(muted(label))
             col.addWidget(w)
@@ -39,7 +39,10 @@ class HistoryTab(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in range(1, 5):
+            hh.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.table.itemSelectionChanged.connect(self.update_buttons)
         outer.addWidget(self.table, 1)
 

@@ -1,7 +1,10 @@
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -18,3 +21,10 @@ def project(tmp_path):
         '# committed\n[project]\nbuild_config = "Shipping"   # default\n\n'
         '[steam]\napp_id = "0000000"  # fill me\ndepot_win_id = "0000001"\n')
     return root
+
+
+@pytest.fixture(scope="session")
+def app():
+    """One QApplication for the whole session (widgets can't live under a QCoreApplication)."""
+    from PySide6.QtWidgets import QApplication
+    return QApplication.instance() or QApplication([])

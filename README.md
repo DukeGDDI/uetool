@@ -347,3 +347,18 @@ platform's own tools. Everything project-specific lives in the project's two
 `uetool*.toml` files and the project's `.uproject`/`Config/DefaultGame.ini`, so the
 tool itself carries nothing about any particular game and can serve every UE project
 on the machine from a single install.
+
+## Control Panel (PySide6 UI)
+
+A desktop front end for the CLI. It shells out to `uetool.py` for every action, so
+the CLI stays stdlib-only; the UI's own dependencies live in `ui/requirements.txt`.
+
+    pip install -r ui/requirements.txt
+    python ui/app.py [PROJECT_DIR]
+
+Tabs: **Setup** (a doctor that checks Python, `.uproject`, engine, steamcmd, Steam
+login/ids, Apple fields, and a stamped `DefaultGame.ini`, with one-click fixes),
+**Build** (form → command preview → live log, Cancel), **Config** (edits
+`uetool.toml` / `uetool.local.toml` preserving comments), **History** (read-only).
+Passwords go to the OS keychain and reach the CLI only as environment variables of
+the child process. Tests: `python -m pytest`.

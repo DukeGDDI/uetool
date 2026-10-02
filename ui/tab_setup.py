@@ -38,9 +38,11 @@ class SetupTab(QWidget):
         self.body = QWidget()
         self.rows = QVBoxLayout(self.body)
         self.rows.setContentsMargins(0, 0, 0, 0)
+        self.rows.setSpacing(2)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidget(self.body)
         outer.addWidget(scroll, 1)
 
@@ -53,8 +55,10 @@ class SetupTab(QWidget):
     def refresh(self):
         while self.rows.count():
             item = self.rows.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if w := item.widget():
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
         if not self.ctx.project:
             self.rows.addWidget(muted("Open a project to run the checks."))
             self.rows.addStretch()
