@@ -1,0 +1,104 @@
+from ui import commands as c
+from ui.commands import BuildSpec, ERROR
+
+
+def argv(spec, **kw):
+    return c.build_argv(spec, "/p", python="py", script="u.py", **kw)
+
+
+def test_release_defaults():
+    assert argv(BuildSpec(platform="win")) == ["py", "u.py", "-P", "/p", "release", "--platform", "win"]
+
+
+def test_flags_only_where_accepted():
+    s = BuildSpec(command="upload", platform="mac", build_config="Shipping", bump=False,
+                  bootstrap=False, clean=True, custom_config="X", dry_run=True)
+    assert argv(s)[4:] == ["upload", "--platform", "mac", "--config", "Shipping", "--dry-run"]
+    assert argv(BuildSpec(command="bootstrap", dry_run=True, clean=True))[4:] == ["bootstrap", "--dry-run"]
+    assert argv(BuildSpec(command="archive", build_config="Dev"))[4:] == ["archive", "--platform", "win"]
+
+
+def test_package_all_flags():
+    s = BuildSpec(command="package", platform="win", build_config="Development", bump=False,
+                  bootstrap=False, clean=True, custom_config="Arcware", dry_run=True)
+    assert argv(s)[4:] == ["package", "--platform", "win", "--config", "Development", "--no-bump",
+                           "--no-bootstrap", "--clean", "--custom-config", "Arcware", "--dry-run"]
+
+
+def test_caps_match_cli_parser():
+    """CAPS must agree with what core/cli.py's argparse really accepts."""
+    import argparse
+    import core.cli as cli
+    captured = {}
+    orig = argparse.ArgumentParser.parse_args
+
+    def spy(self, *a, **k):
+        captured["p"] = self
+        raise SystemExit
+    argparse.ArgumentParser.parse_args = spy
+    try:
+        try:
+            cli.main()
+        except SystemExit:
+            pass
+    finally:
+        argparse.ArgumentParser.parse_args = orig
+    sub = next(a for a in captured["p"]._actions if isinstance(a, argparse._SubParsersAction))
+    flagmap = {"platform": "--platform", "config": "--config", "dry_run": "--dry-run",
+               "bump": "--no-bump", "bootstrap": "--no-bootstrap", "clean": "--clean",
+               "custom_config": "--custom-config"}
+    assert set(sub.choices) == set(c.CAPS)
+    for name, parser in sub.choices.items():
+        opts = {o for a in parser._actions for o in a.option_strings}
+        assert {flagmap[f] for f in c.CAPS[name]} == opts & set(flagmap.values()), name
+
+
+def test_validate_release_custom_config_blocked():
+    issues = c.validate(BuildSpec(custom_config="Arcware", bump=False), "win")
+    assert any("not allowed with release" in i.message for i in c.blocking(issues))
+
+
+def test_validate_custom_config_must_exist_for_package():
+    s = BuildSpec(command="package", custom_config="Nope", bump=False)
+    assert c.blocking(c.validate(s, "win", layers=["Arcware"]))
+    assert not c.blocking(c.validate(s, "win", layers=["Nope"]))
+
+
+def test_notarize_only_on_mac():
+    assert c.blocking(c.validate(BuildSpec(command="notarize", platform="mac"), "win"))
+    assert c.blocking(c.validate(BuildSpec(command="release", platform="mac", bump=False), "win"))
+    assert not c.blocking(c.validate(BuildSpec(command="release", platform="mac", bump=False), "mac"))
+    assert not c.blocking(c.validate(BuildSpec(command="release", platform="win", bump=False), "win"))
+
+
+def test_dry_run_with_bump_is_blocked_and_for_dry_run_fixes_it():
+    s = BuildSpec(command="package", dry_run=True)
+    assert c.blocking(c.validate(s, "win"))
+    d = c.for_dry_run(BuildSpec(command="package"))
+    assert d.dry_run and not d.bump and not c.blocking(c.validate(d, "win"))
+    assert c.blocking(c.validate(c.for_dry_run(BuildSpec(command="bump")), "win"))
+
+
+def test_effective_bump():
+    assert c.effective_bump(BuildSpec(command="bump"))
+    assert c.effective_bump(BuildSpec(command="release", bump=True))
+    assert not c.effective_bump(BuildSpec(command="release", bump=False))
+    assert not c.effective_bump(BuildSpec(command="upload", bump=True))
+
+
+def test_clean_warning():
+    assert c.clean_warning(BuildSpec(command="package", clean=True))
+    assert c.clean_warning(BuildSpec(command="package", clean=True, dry_run=True)) is None
+    assert c.clean_warning(BuildSpec(command="upload", clean=True)) is None
+
+
+def test_display_quotes_paths():
+    out = c.display(BuildSpec(command="upload", platform="win"), "/My Games/Fake")
+    assert out == "uetool -P '/My Games/Fake' upload --platform win"
+
+
+def test_custom_layers(project):
+    assert c.custom_layers(project) == []
+    (project / "Config" / "Custom" / "Arcware").mkdir(parents=True)
+    (project / "Config" / "Custom" / "A.txt").write_text("x")
+    assert c.custom_layers(project) == ["Arcware"]
