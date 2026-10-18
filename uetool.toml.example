@@ -10,11 +10,26 @@ build_config = "Shipping"          # default; override per-run with --config
 stage_dir = "Saved/StagedBuilds"   # UE -stage output (self-contained build)
 
 [steam]
-# Fill these in from your Steamworks app.
+# Staged subfolders RunUAT produces under stage_dir (defaults shown). Shared by
+# every Steam app below.
+win_stage_subdir = "Windows"
+mac_stage_subdir = "Mac"
+
+# One table per Steam app the game has: main (store), demo, playtest. Omit the
+# ones you don't have. `uetool upload/release --app <name>` picks the destination
+# (the flag is optional only when exactly one app is configured). Fill the ids in
+# from Steamworks; a 0000… value counts as "not set".
+[steam.main]
 app_id = "0000000"
 depot_win_id = "0000001"
 # depot_mac_id = "0000002"          # uncomment when shipping macOS
 
-# Staged subfolders RunUAT produces under stage_dir (defaults shown).
-win_stage_subdir = "Windows"
-mac_stage_subdir = "Mac"
+# [steam.demo]
+# app_id = "0000000"
+# depot_win_id = "0000001"
+# depot_mac_id = "0000002"
+
+# [steam.playtest]
+# app_id = "0000000"
+# depot_win_id = "0000001"
+# depot_mac_id = "0000002"

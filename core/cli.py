@@ -7,10 +7,14 @@ the UE project at the current directory, or one given with -P/--project:
     uetool bump
     uetool package [--platform win|mac] [--config Shipping] [--no-bump]
                    [--custom-config Arcware]
-    uetool upload
+    uetool upload [--app main|demo|playtest]
     uetool notarize
-    uetool release                       # bump -> package -> [notarize on mac] -> upload
-    uetool -P /path/to/Project release --platform mac
+    uetool release [--app ...]           # bump -> package -> [notarize on mac] -> upload
+    uetool -P /path/to/Project release --platform mac --app playtest
+
+--app picks which of the project's Steam apps ([steam.main] / [steam.demo] /
+[steam.playtest] in uetool.toml) receives the upload. It may be omitted only when
+exactly one app is configured.
 
 Add --dry-run to any command to print the external commands without running them.
 """
@@ -25,6 +29,7 @@ from . import (
     notarize as notarize_mod,
     archive as archive_mod,
 )
+from .config import STEAM_APPS
 from .paths import host_platform
 
 
@@ -52,6 +57,13 @@ def _add_custom_config(sp):
                          "Arcware for pixel streaming. Omit for storefront builds.")
 
 
+def _add_app(sp):
+    sp.add_argument("--app", choices=list(STEAM_APPS), default=None,
+                    help="Which Steam app to upload to ([steam.<app>] in uetool.toml). "
+                         "Required when more than one app is configured; otherwise the "
+                         "single configured app is used.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="uetool", description="Unreal Engine build & Steam release tool")
@@ -67,7 +79,9 @@ def main() -> int:
     package_p = sub.add_parser("package", help="Package the project via RunUAT.")
     _add_common(package_p, allow_no_bump=True)
     _add_custom_config(package_p)
-    _add_common(sub.add_parser("upload", help="Upload the staged build to Steam."))
+    upload_p = sub.add_parser("upload", help="Upload the staged build to Steam.")
+    _add_common(upload_p)
+    _add_app(upload_p)
     archive_p = sub.add_parser(
         "archive", help="Zip the staged build for non-Steam distribution (e.g. pixel streaming).")
     archive_p.add_argument("--platform", choices=["win", "mac"], default=host_platform(),
@@ -78,6 +92,7 @@ def main() -> int:
     release_p = sub.add_parser("release", help="bump -> package -> [notarize on mac] -> upload.")
     _add_common(release_p, allow_no_bump=True)
     _add_custom_config(release_p)
+    _add_app(release_p)
 
     args = parser.parse_args()
 
@@ -104,7 +119,7 @@ def main() -> int:
                             custom_config=args.custom_config)
 
     elif args.command == "upload":
-        steam_mod.upload(cfg, args.platform, args.dry_run)
+        steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app)
 
     elif args.command == "archive":
         archive_mod.archive(cfg, args.platform, args.dry_run)
@@ -124,6 +139,9 @@ def main() -> int:
                 f"For a non-Steam build use:  uetool package --platform {args.platform} "
                 f"--custom-config {args.custom_config}  &&  uetool archive --platform {args.platform}"
             )
+        # Resolve the target app before spending an hour on a build, so a missing or
+        # ambiguous --app fails up front rather than after packaging.
+        config.select_app(cfg, args.app)
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
         package_mod.package(cfg, args.platform, build_config, args.dry_run,
@@ -131,6 +149,6 @@ def main() -> int:
         # macOS builds must be signed + notarized before they leave the machine.
         if args.platform == "mac":
             notarize_mod.notarize(cfg, args.dry_run)
-        steam_mod.upload(cfg, args.platform, args.dry_run)
+        steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app)
 
     return 0

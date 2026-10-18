@@ -14,6 +14,10 @@ def test_flags_only_where_accepted():
     s = BuildSpec(command="upload", platform="mac", build_config="Shipping", bump=False,
                   bootstrap=False, clean=True, custom_config="X", dry_run=True)
     assert argv(s)[4:] == ["upload", "--platform", "mac", "--config", "Shipping", "--dry-run"]
+    s = BuildSpec(command="upload", platform="mac", app="playtest")
+    assert argv(s)[4:] == ["upload", "--platform", "mac", "--app", "playtest"]
+    assert argv(BuildSpec(command="package", app="playtest", bump=False))[4:] == [
+        "package", "--platform", "win", "--no-bump"]
     assert argv(BuildSpec(command="bootstrap", dry_run=True, clean=True))[4:] == ["bootstrap", "--dry-run"]
     assert argv(BuildSpec(command="archive", build_config="Dev"))[4:] == ["archive", "--platform", "win"]
 
@@ -46,7 +50,7 @@ def test_caps_match_cli_parser():
     sub = next(a for a in captured["p"]._actions if isinstance(a, argparse._SubParsersAction))
     flagmap = {"platform": "--platform", "config": "--config", "dry_run": "--dry-run",
                "bump": "--no-bump", "bootstrap": "--no-bootstrap", "clean": "--clean",
-               "custom_config": "--custom-config"}
+               "custom_config": "--custom-config", "app": "--app"}
     assert set(sub.choices) == set(c.CAPS)
     for name, parser in sub.choices.items():
         opts = {o for a in parser._actions for o in a.option_strings}
@@ -62,6 +66,20 @@ def test_validate_custom_config_must_exist_for_package():
     s = BuildSpec(command="package", custom_config="Nope", bump=False)
     assert c.blocking(c.validate(s, "win", layers=["Arcware"]))
     assert not c.blocking(c.validate(s, "win", layers=["Nope"]))
+
+
+def test_validate_steam_app_choice():
+    one, many = ["playtest"], ["main", "playtest"]
+    rel = BuildSpec(command="release", bump=False)
+    assert not c.blocking(c.validate(rel, "win"))                       # apps=None: skipped
+    assert not c.blocking(c.validate(rel, "win", apps=one))             # single app implied
+    assert c.blocking(c.validate(rel, "win", apps=[]))                  # nothing configured
+    bad = c.blocking(c.validate(rel, "win", apps=many))
+    assert bad and "choose" in bad[0].message                          # ambiguous
+    assert not c.blocking(c.validate(BuildSpec(command="release", bump=False, app="main"), "win", apps=many))
+    assert c.blocking(c.validate(BuildSpec(command="release", bump=False, app="demo"), "win", apps=many))
+    # Commands that don't upload never care.
+    assert not c.blocking(c.validate(BuildSpec(command="package", bump=False), "win", apps=many))
 
 
 def test_notarize_only_on_mac():

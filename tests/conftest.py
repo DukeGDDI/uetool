@@ -19,7 +19,7 @@ def project(tmp_path):
         "[/Script/EngineSettings.GeneralProjectSettings]\nProjectVersion=v1.2.0\n")
     (root / "uetool.toml").write_text(
         '# committed\n[project]\nbuild_config = "Shipping"   # default\n\n'
-        '[steam]\napp_id = "0000000"  # fill me\ndepot_win_id = "0000001"\n')
+        '[steam.main]\napp_id = "0000000"  # fill me\ndepot_win_id = "0000001"\n')
     return root
 
 

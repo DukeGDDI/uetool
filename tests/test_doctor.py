@@ -93,11 +93,25 @@ def test_account_cached_does_not_match_substring():
 
 
 def test_steam_ids_and_user(project):
-    assert run(project, host="win")["steam_ids"].status == d.FIX
-    (project / "uetool.toml").write_text('[steam]\napp_id = "5"\ndepot_win_id = "6"\n')
+    r = run(project, host="win")["steam_ids"]
+    assert r.status == d.FIX and "No Steam app" in r.detail
+    (project / "uetool.toml").write_text('[steam.main]\napp_id = "5"\ndepot_win_id = "6"\n')
     assert run(project, host="win")["steam_ids"].status == d.PASS
-    assert run(project, host="mac")["steam_ids"].status == d.FIX      # depot_mac_id missing
+    r = run(project, host="mac")["steam_ids"]
+    assert r.status == d.FIX and "depot_mac_id" in r.detail and "main" in r.detail
+    (project / "uetool.toml").write_text(
+        '[steam.main]\napp_id = "5"\ndepot_win_id = "6"\n'
+        '[steam.playtest]\napp_id = "7"\ndepot_win_id = "8"\ndepot_mac_id = "9"\n')
+    r = run(project, host="win")["steam_ids"]
+    assert r.status == d.PASS and r.detail == "main 5, playtest 7"
+    assert run(project, host="mac")["steam_ids"].status == d.FIX      # main lacks a mac depot
     assert run(project)["steam_user"].status == d.FIX
+
+
+def test_steam_legacy_layout_fails(project):
+    (project / "uetool.toml").write_text('[steam]\napp_id = "5"\ndepot_win_id = "6"\n')
+    r = run(project, host="win")["steam_ids"]
+    assert r.status == d.FAIL and "old flat" in r.detail
 
 
 def test_apple_only_on_mac(project):

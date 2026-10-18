@@ -21,10 +21,10 @@ CAPS: dict[str, frozenset[str]] = {
     "bump": frozenset(_COMMON),
     "bootstrap": frozenset({"dry_run"}),
     "package": frozenset(_BUILD | {"custom_config"}),
-    "upload": frozenset(_COMMON),
+    "upload": frozenset(_COMMON | {"app"}),
     "archive": frozenset({"platform", "dry_run"}),
     "notarize": frozenset(_COMMON),
-    "release": frozenset(_BUILD | {"custom_config"}),
+    "release": frozenset(_BUILD | {"custom_config", "app"}),
 }
 
 ERROR, WARN = "error", "warn"
@@ -40,6 +40,7 @@ class BuildSpec:
     bootstrap: bool = True              # False -> --no-bootstrap
     clean: bool = False
     custom_config: str | None = None
+    app: str | None = None              # Steam app to upload to: main | demo | playtest
 
 
 @dataclass(frozen=True)
@@ -74,17 +75,31 @@ def for_dry_run(spec: BuildSpec) -> BuildSpec:
     return replace(spec, dry_run=True, bump=False)
 
 
-def validate(spec: BuildSpec, host: str, layers: list[str] | None = None) -> list[Issue]:
+def validate(spec: BuildSpec, host: str, layers: list[str] | None = None,
+             apps: list[str] | None = None) -> list[Issue]:
     """Problems that should stop (ERROR) or merely flag (WARN) a run.
 
     host is 'win' or 'mac' (core.paths.host_platform()); layers are the available
-    Config/Custom/* names, or None to skip the existence check.
+    Config/Custom/* names, or None to skip the existence check; apps are the Steam
+    apps configured in uetool.toml (configstore.configured_apps()), or None to skip
+    the app check.
     """
     out: list[Issue] = []
     if spec.command not in CAPS:
         return [Issue(ERROR, f"Unknown command '{spec.command}'.")]
     if spec.platform not in ("win", "mac"):
         out.append(Issue(ERROR, f"Platform must be win or mac, not '{spec.platform}'."))
+
+    if accepts(spec.command, "app") and apps is not None:
+        if not apps:
+            out.append(Issue(ERROR, "No Steam app configured. Add a main, demo or playtest "
+                             "app id on the Config tab."))
+        elif spec.app is None and len(apps) > 1:
+            out.append(Issue(ERROR, "Several Steam apps are configured: choose which one "
+                             f"to upload to ({', '.join(apps)})."))
+        elif spec.app is not None and spec.app not in apps:
+            out.append(Issue(ERROR, f"Steam app '{spec.app}' is not configured "
+                             f"(configured: {', '.join(apps) or 'none'})."))
 
     if spec.custom_config and accepts(spec.command, "custom_config"):
         if spec.command == "release":
@@ -135,6 +150,8 @@ def build_argv(spec: BuildSpec, project: Path | str, *, python: str | None = Non
         argv.append("--clean")
     if accepts(spec.command, "custom_config") and spec.custom_config:
         argv += ["--custom-config", spec.custom_config]
+    if accepts(spec.command, "app") and spec.app:
+        argv += ["--app", spec.app]
     if accepts(spec.command, "dry_run") and spec.dry_run:
         argv.append("--dry-run")
     return argv

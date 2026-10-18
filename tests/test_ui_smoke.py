@@ -136,10 +136,34 @@ def test_setup_fix_sets_ue_root_and_config_tab_follows(win, project, tmp_path):
 
 def test_config_tab_edit_save_roundtrip(win, project):
     c = win.tab_widgets["Config"]
-    c.edits["app_id"].setText("abc")
-    assert not c.save_btn.isEnabled() and "numbers only" in c.msgs["app_id"].text()
-    c.edits["app_id"].setText("4852730")
+    c.edits["main_app_id"].setText("abc")
+    assert not c.save_btn.isEnabled() and "numbers only" in c.msgs["main_app_id"].text()
+    c.edits["main_app_id"].setText("4852730")
     assert c.save_btn.isEnabled()
     c.save_btn.click()
     assert 'app_id = "4852730"  # fill me' in (project / "uetool.toml").read_text()
     assert not win.ctx.cfg.dirty
+
+
+def test_build_tab_steam_app_selection(win, project):
+    b = build(win)
+    b.command.setCurrentText("upload")
+    assert not b.run_btn.isEnabled() and "No Steam app" in b.issues.text()
+    # One configured app: preselected; the UI always passes --app explicitly.
+    win.ctx.cfg.apply_now("playtest_app_id", "4852730")
+    win.ctx.config_changed.emit()
+    assert b.app.currentData() == "playtest" and b.run_btn.isEnabled()
+    assert b.preview.text().endswith("--app playtest")
+    # Two configured apps: Run is blocked until one is chosen, then --app appears.
+    win.ctx.cfg.apply_now("main_app_id", "4547240")
+    win.ctx.config_changed.emit()
+    assert b.app.currentData() == "playtest"       # the earlier choice survives the repopulate
+    b.app.setCurrentIndex(0)                        # "(choose…)"
+    assert b.app.currentData() is None and not b.run_btn.isEnabled() and "choose" in b.issues.text()
+    b.app.setCurrentIndex(1)
+    assert b.app.currentData() == "main" and b.run_btn.isEnabled()
+    assert b.preview.text().endswith("upload --platform mac --app main") or \
+        b.preview.text().endswith("upload --platform win --app main")
+    # Commands that don't upload ignore the combo.
+    b.command.setCurrentText("package")
+    assert not b.app.isEnabled() and "--app" not in b.preview.text()

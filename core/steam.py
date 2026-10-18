@@ -1,7 +1,7 @@
 """Steam upload via steamcmd + ContentBuilder VDF scripts."""
 from pathlib import Path
 
-from .config import Config
+from .config import Config, select_app
 from .paths import run
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "steam"
@@ -23,18 +23,23 @@ def _read_version(cfg: Config) -> str:
     )
 
 
-def upload(cfg: Config, target: str, dry_run: bool) -> None:
-    if not cfg.app_id or cfg.app_id.startswith("0000"):
-        raise SystemExit("Set [steam] app_id in uetool.toml before uploading.")
+def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> None:
+    """Push the staged `target` build to one of the project's Steam apps.
+
+    `app` is "main" / "demo" / "playtest"; None means the single configured app
+    (several configured apps make the choice mandatory, see config.select_app)."""
+    steam_app = select_app(cfg, app)
     if not cfg.steam_user:
         raise SystemExit(
             "Steam user not set. Add [steam] user to uetool.local.toml "
             "or set UETOOL_STEAM_USER."
         )
 
-    depot_id = cfg.depot_ids.get(target, "")
+    depot_id = steam_app.depot_ids.get(target, "")
     if not depot_id or depot_id.startswith("0000"):
-        raise SystemExit(f"Set the Steam depot id for platform '{target}' in uetool.toml.")
+        raise SystemExit(
+            f"Set depot_{target}_id under [steam.{steam_app.name}] in uetool.toml."
+        )
 
     version = _read_version(cfg)
     content_root = cfg.stage_dir / cfg.stage_subdirs[target]
@@ -43,13 +48,14 @@ def upload(cfg: Config, target: str, dry_run: bool) -> None:
             f"Staged build not found at {content_root}. Run 'package' first."
         )
 
-    gen = cfg.work_dir / "steam_build"
+    # One folder per app so a demo and a store upload don't overwrite each other's scripts.
+    gen = cfg.work_dir / "steam_build" / steam_app.name
     gen.mkdir(parents=True, exist_ok=True)
     build_output = gen / "output"
     build_output.mkdir(parents=True, exist_ok=True)
 
     repl = {
-        "@APP_ID@": cfg.app_id,
+        "@APP_ID@": steam_app.app_id,
         "@DEPOT_ID@": depot_id,
         "@DESC@": version,
         # Forward slashes: ContentBuilder accepts them on every OS and avoids
@@ -67,7 +73,8 @@ def upload(cfg: Config, target: str, dry_run: bool) -> None:
     app_vdf.write_text(_render(app_tpl, repl), encoding="utf-8")
     depot_vdf.write_text(_render(depot_tpl, repl), encoding="utf-8")
 
-    print(f"Rendered Steam scripts in {gen} (app {cfg.app_id}, depot {depot_id}, {version})")
+    print(f"Rendered Steam scripts in {gen} ({steam_app.name} app {steam_app.app_id}, "
+          f"depot {depot_id}, {version})")
 
     login = ["+login", cfg.steam_user]
     if cfg.steam_password:
@@ -80,7 +87,7 @@ def upload(cfg: Config, target: str, dry_run: bool) -> None:
         # The upload does NOT promote the build — that's a deliberate manual step.
         bar = "=" * 72
         print(f"\n{bar}")
-        print(f"Uploaded {version} to app {cfg.app_id}, depot {depot_id}.")
+        print(f"Uploaded {version} to {steam_app.name} app {steam_app.app_id}, depot {depot_id}.")
         print("This build is NOT live yet. Set it live on a branch in Steamworks:")
-        print(f"  https://partner.steamgames.com/apps/builds/{cfg.app_id}")
+        print(f"  https://partner.steamgames.com/apps/builds/{steam_app.app_id}")
         print(bar)
