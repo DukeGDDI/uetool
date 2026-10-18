@@ -1,6 +1,7 @@
 """Steam upload via steamcmd + ContentBuilder VDF scripts."""
 from pathlib import Path
 
+from . import stage
 from .config import Config, select_app
 from .paths import run
 
@@ -47,6 +48,8 @@ def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> N
         raise SystemExit(
             f"Staged build not found at {content_root}. Run 'package' first."
         )
+    if target == "mac":
+        stage.normalize_mac_bundle(cfg, dry_run)
 
     # One folder per app so a demo and a store upload don't overwrite each other's scripts.
     gen = cfg.work_dir / "steam_build" / steam_app.name

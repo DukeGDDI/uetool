@@ -10,6 +10,7 @@ import os
 import zipfile
 from pathlib import Path
 
+from . import stage
 from . import version as ver
 from .config import Config
 
@@ -25,6 +26,8 @@ def _add_symlink(zf: zipfile.ZipFile, path: Path, stage_root: Path) -> None:
 
 
 def archive(cfg: Config, target: str, dry_run: bool) -> Path:
+    if target == "mac":
+        stage.normalize_mac_bundle(cfg, dry_run)
     stage_root = cfg.stage_dir / cfg.stage_subdirs[target]
     version = ver.compute(cfg)
     dist = cfg.work_dir / "dist"
