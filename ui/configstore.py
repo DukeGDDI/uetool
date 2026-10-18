@@ -7,6 +7,10 @@ edit made elsewhere in the meantime isn't clobbered.
 Steam ids are per app: the fields main_app_id, demo_depot_win_id, … map onto the
 [steam.main] / [steam.demo] / [steam.playtest] tables (a dotted `section`).
 """
+# ProjectConfig has a method named `set`, which would shadow the builtin in the
+# `-> set[str]` annotation on Python < 3.14 (eager annotation evaluation).
+from __future__ import annotations
+
 import os
 import tomllib
 from dataclasses import dataclass
