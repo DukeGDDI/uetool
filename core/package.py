@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 from . import inioverlay
+from . import stage
 from . import version as ver
 from .config import Config
 from .paths import build_script_path, host_is_windows, host_platform, run, runuat_path
@@ -131,6 +132,8 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool,
         print(f"# would stamp ProjectVersion={full_version} for the cook, "
               f"then restore the base {base_version}")
         run(cmd, dry_run)
+        if target == "mac":
+            print(f"# would rename the staged bundle to {stage.mac_bundle(cfg).name}")
         return
 
     # Fold the custom ini layer in before stamping the version. Both touch DefaultGame.ini,
@@ -148,3 +151,8 @@ def package(cfg: Config, target: str, build_config: str, dry_run: bool,
     finally:
         ver.stamp(cfg, base_version)
         inioverlay.restore(overlaid)
+
+    # Give the macOS bundle its configuration-independent name so the Steam launch
+    # option never changes between Development and Shipping uploads.
+    if target == "mac":
+        stage.normalize_mac_bundle(cfg)

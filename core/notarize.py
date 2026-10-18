@@ -12,6 +12,7 @@ UETOOL_APPLE_APP_PASSWORD environment variable, never from a file.
 """
 from pathlib import Path
 
+from . import stage
 from .config import Config
 from .paths import run
 
@@ -79,6 +80,8 @@ def notarize(cfg: Config, dry_run: bool) -> None:
     content_root = cfg.stage_dir / cfg.stage_subdirs["mac"]
     if not dry_run and not content_root.exists():
         raise SystemExit(f"Staged build not found at {content_root}. Run 'package --platform mac' first.")
+    # A hand-staged build still carries UE's decorated bundle name; normalize it first.
+    stage.normalize_mac_bundle(cfg, dry_run)
 
     # A real run is guarded above so the staged build exists; locate the actual
     # bundle (RunUAT names it "<Project>-<Plat>-<Config>.app", not "<Project>.app").

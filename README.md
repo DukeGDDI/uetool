@@ -200,6 +200,23 @@ The older single-app layout (`app_id` / `depot_*_id` directly under `[steam]`) i
 read; the tool exits with the new layout spelled out, and the Control Panel's Setup tab
 flags it.
 
+### Stable launch paths (`<Project>.app` / `<Project>.exe`)
+
+Steam's launch options name one executable per platform, and they must not change
+between a Development and a Shipping upload to the same depot. UE decorates its
+binaries with the configuration (`D6scend-Mac-Shipping.app`), and on macOS that name is
+fixed by the Xcode project UBT generates, so it cannot be changed from `Target.cs`
+(`UndecoratedConfiguration` only renames the raw executable, and a mismatch there makes
+the bundle silently keep the *previous* build). uetool therefore renames the staged macOS
+bundle to **`<Project>.app`** right after `package`, and `notarize`, `archive` and `upload`
+normalize again in case the stage folder was produced by hand. Only the folder is renamed:
+the executable inside, `Info.plist` and the code signature are untouched. Windows needs no
+help: UAT already stages an undecorated **`<Project>.exe`** launcher at the staged root for
+every configuration.
+
+Set the Steamworks launch options once — macOS `D6scend.app`, Windows `D6scend.exe` — and
+they hold for every configuration.
+
 ### Fresh checkout / CI
 
 A C++ project that has never been built has no `Binaries/<host>/<Project>Editor.target`
@@ -335,7 +352,8 @@ ProjectVersion in Config/DefaultGame.ini   (authored "vX.Y.Z" by hand; never car
         │             (NO -archive) -> restore the base "vX.Y.Z" (finally-guarded)
         ▼
    Saved/StagedBuilds/<Windows|Mac>/   (self-contained build embedding vX.Y.Z.N;
-                                        source DefaultGame.ini stays vX.Y.Z)
+        │                               source DefaultGame.ini stays vX.Y.Z)
+        │  [mac] rename <Project>-Mac-<Config>.app -> <Project>.app (stable launch path)
         │  notarize() [mac only]: sign inside-out -> notarytool submit -> staple
         │  upload(--app X): render VDFs into .uetool/steam_build/X/, run steamcmd +run_app_build
         ▼
@@ -350,6 +368,7 @@ uetool/
 ├── uetool.py         Python entry (sets sys.path, runs core.cli)
 └── core/             the package (host detection, config, version, package, steam, notarize)
     └── steam/        VDF templates (@TOKEN@ placeholders)
+    └── stage.py      staged-output helpers (macOS bundle rename)
 ```
 
 The launcher picks the interpreter (`UETOOL_PYTHON`) and runs `uetool.py`, which
