@@ -8,6 +8,9 @@ Apple's `codesign`/`notarytool` do macOS signing, and `steamcmd` does the upload
 
 Install it once, put it on your `PATH`, and point it at any UE project.
 
+Prefer a window? The same tool ships with a desktop **Control Panel** — see
+[Starting the UI](#starting-the-ui).
+
 ---
 
 ## Install
@@ -385,15 +388,59 @@ on the machine from a single install.
 ## Control Panel (PySide6 UI)
 
 A desktop front end for the CLI. It shells out to `uetool.py` for every action, so
-the CLI stays stdlib-only; the UI's own dependencies live in `ui/requirements.txt`.
+the CLI stays stdlib-only; the UI's own dependencies (PySide6, tomlkit, keyring,
+pytest) live in `ui/requirements.txt`.
 
-    pip install -r ui/requirements.txt
-    python ui/app.py [PROJECT_DIR]
+### Starting the UI
 
-Tabs: **Setup** (a doctor that checks Python, `.uproject`, engine, steamcmd, Steam
-login/ids, Apple fields, and a stamped `DefaultGame.ini`, with one-click fixes),
-**Build** (form incl. the Steam app to upload to → command preview → live log, Cancel),
-**Config** (edits `uetool.toml` / `uetool.local.toml` preserving comments, one box per
-Steam app), **History** (read-only, with a Steamworks builds link per app).
-Passwords go to the OS keychain and reach the CLI only as environment variables of
-the child process. Tests: `python -m pytest`.
+**One-time setup** — make a virtual environment inside the uetool folder and install
+the UI dependencies into it (the CLI itself needs none of this):
+
+```bash
+# macOS / Linux — use the same 3.11+ interpreter as UETOOL_PYTHON
+cd ~/Workspace/uetool
+python3 -m venv .venv
+.venv/bin/pip install -r ui/requirements.txt
+```
+```bat
+:: Windows
+cd D:\Workspace\uetool
+python -m venv .venv
+.venv\Scripts\pip install -r ui\requirements.txt
+```
+
+**Launch** — optionally pass the project folder (or its `.uproject`); without it the
+app reopens the last project you used, or you pick one with *Browse…*:
+
+```bash
+# macOS / Linux
+.venv/bin/python ui/app.py /path/to/YourGame
+```
+```bat
+:: Windows
+.venv\Scripts\python ui\app.py D:\path\to\YourGame
+```
+
+**First run:** on the **Config** tab set *Steam SDK folder* to the folder containing
+steamcmd (the same path as `UETOOL_STEAM_SDK`). The UI keeps its own copy of that
+setting rather than reading your shell's environment, and passes it to every run; the
+**Setup** tab's *Copy export lines* button gives you the matching shell line for the
+CLI. Steam and Apple passwords are entered once on the Config tab and stored in the OS
+keychain, never in a file. Then check the **Setup** tab: when every row is *Pass* or
+*n/a* the header badge reads *Ready*.
+
+### Tabs
+
+- **Setup** — a doctor that checks Python, `.uproject`, engine, steamcmd, Steam
+  login, the configured Steam apps, Apple fields, and a stamped `DefaultGame.ini`,
+  with one-click fixes.
+- **Build** — pick the command, platform and the Steam app to upload to; the exact
+  CLI line is previewed, the log streams live, and *Cancel* stops the run cleanly.
+  *Dry run* rehearses with the bump off so `.build_number` is untouched.
+- **Config** — edits `uetool.toml` / `uetool.local.toml` preserving comments, one box
+  per Steam app, plus the keychain passwords and the Steam SDK folder.
+- **History** — read-only: current version, staged builds and archives on disk, and a
+  Steamworks builds link per app.
+
+Passwords reach the CLI only as environment variables of the child process. Tests:
+`.venv/bin/python -m pytest`.
