@@ -15,7 +15,7 @@ from pathlib import Path
 from core.paths import host_platform, runuat_path, steamcmd_for_sdk
 
 from . import keychain, projectstate
-from .configstore import ProjectConfig
+from .configstore import ProjectConfig, steam_field
 
 PASS, FIX, FAIL, NA = "pass", "fix", "fail", "na"
 
@@ -170,16 +170,27 @@ def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
                 "(password + Steam Guard) so uploads don't prompt.",
                 Action("steam_login", "Open login terminal", {"command": [cmd, "+login", user]}))
 
-    # 7. Steam ids
-    miss = [label for name, label in (("app_id", "app_id"),
-                                      ("depot_win_id" if host == "win" else "depot_mac_id",
-                                       "depot_win_id" if host == "win" else "depot_mac_id"))
-            if cfg.is_unset(name)]
-    if miss:
-        add("steam_ids", "Steam ids", FIX, f"{', '.join(miss)} still unset or a 0000… placeholder.",
+    # 7. Steam apps (main / demo / playtest; any subset, each needs the host's depot)
+    host_depot = "depot_win_id" if host == "win" else "depot_mac_id"
+    apps = cfg.configured_apps()
+    if cfg.legacy_steam_keys():
+        add("steam_ids", "Steam apps", FAIL,
+            "uetool.toml still uses the old flat [steam] app_id layout, which the CLI refuses. "
+            "Move the ids into [steam.main] / [steam.demo] / [steam.playtest].",
+            Action("open_config", "Open Config"))
+    elif not apps:
+        add("steam_ids", "Steam apps", FIX,
+            "No Steam app configured: set the app id for main, demo or playtest.",
             Action("open_config", "Open Config"))
     else:
-        add("steam_ids", "Steam ids", PASS, f"app {cfg.get('app_id')}")
+        miss = [a for a in apps if cfg.is_unset(steam_field(a, host_depot))]
+        if miss:
+            add("steam_ids", "Steam apps", FIX,
+                f"{host_depot} still unset or a 0000… placeholder for: {', '.join(miss)}.",
+                Action("open_config", "Open Config"))
+        else:
+            add("steam_ids", "Steam apps", PASS,
+                ", ".join(f"{a} {cfg.get(steam_field(a, 'app_id'))}" for a in apps))
 
     # 8. Apple (macOS only)
     if host != "mac":

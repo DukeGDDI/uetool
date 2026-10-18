@@ -5,11 +5,12 @@ from PySide6.QtWidgets import (
 )
 
 from . import keychain
-from .configstore import BASE, LOCAL, ProjectConfig
+from .configstore import BASE, LOCAL, STEAM_APPS, ProjectConfig, steam_field
 from .context import Context
 from .widgets import muted, set_role
 
 BUILD_CONFIGS = ["Shipping", "Development", "DebugGame", "Test"]
+APP_TITLES = {"main": "Steam: main (store app)", "demo": "Steam: demo", "playtest": "Steam: playtest"}
 
 
 class SecretRow(QWidget):
@@ -72,10 +73,23 @@ class ConfigTab(QWidget):
         f1 = QFormLayout(shared)
         self._add(f1, "build_config", "Build configuration", combo=True)
         self._add(f1, "stage_dir", "Stage directory")
-        self._add(f1, "app_id", "Steam app id")
-        self._add(f1, "depot_win_id", "Windows depot id")
-        self._add(f1, "depot_mac_id", "macOS depot id")
+        self.legacy_note = QLabel("uetool.toml still uses the old flat [steam] app_id layout, which the "
+                                  "CLI refuses. Move the ids into the per-app tables below and delete "
+                                  "the old keys.")
+        self.legacy_note.setProperty("role", "err-box")
+        self.legacy_note.setWordWrap(True)
+        f1.addRow(self.legacy_note)
         outer.addWidget(shared)
+
+        # One box per Steam app; any of them may be left empty.
+        for app in STEAM_APPS:
+            box = QGroupBox(f"{APP_TITLES[app]} — {BASE}")
+            fa = QFormLayout(box)
+            self._add(fa, steam_field(app, "app_id"), "App id")
+            self._add(fa, steam_field(app, "depot_win_id"), "Windows depot id")
+            self._add(fa, steam_field(app, "depot_mac_id"), "macOS depot id")
+            fa.addRow(muted(f"Leave empty if this project has no {app} app."))
+            outer.addWidget(box)
 
         local = QGroupBox(f"{LOCAL} (this machine only)")
         f2 = QFormLayout(local)
@@ -205,6 +219,7 @@ class ConfigTab(QWidget):
             msg.setText(text)
             msg.setVisible(bool(text))
             set_role(msg, "err" if lvl == "error" else "warn")
+        self.legacy_note.setVisible(bool(cfg and cfg.legacy_steam_keys()))
         mac = self.ctx.host == "mac"
         for n in self.APPLE:
             self.edits[n].setEnabled(enabled and mac)

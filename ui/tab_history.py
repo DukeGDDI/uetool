@@ -2,10 +2,12 @@
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from . import history
+from .configstore import steam_field
 from .context import Context
 from .widgets import muted
 
@@ -51,6 +53,7 @@ class HistoryTab(QWidget):
         self.reveal.clicked.connect(self.reveal_selected)
         self.steamworks = QPushButton("Open Steamworks builds page")
         self.steamworks.clicked.connect(self.open_steamworks)
+        self._single_url: str | None = None
         refresh = QPushButton("Refresh")
         refresh.clicked.connect(self.refresh)
         for b in (self.reveal, self.steamworks, refresh):
@@ -80,9 +83,33 @@ class HistoryTab(QWidget):
                 self.table.setItem(r, c, QTableWidgetItem(text))
         self.update_buttons()
 
+    def steamworks_urls(self) -> list[tuple[str, str, str]]:
+        """(app name, app id, builds URL) for every configured Steam app."""
+        cfg = self.ctx.cfg
+        if not cfg:
+            return []
+        out = []
+        for a in cfg.configured_apps():
+            app_id = cfg.get(steam_field(a, "app_id"))
+            if (url := history.builds_url(app_id)):
+                out.append((a, app_id, url))
+        return out
+
     def update_buttons(self):
         self.reveal.setEnabled(bool(self.table.selectedItems()))
-        self.steamworks.setEnabled(bool(self.ctx.cfg and history.builds_url(self.ctx.cfg.get("app_id"))))
+        urls = self.steamworks_urls()
+        self.steamworks.setEnabled(bool(urls))
+        # Several apps: a menu, one entry each (a button with a menu doesn't emit clicked).
+        # One app: a plain click opens it.
+        if len(urls) > 1:
+            menu = QMenu(self.steamworks)
+            for name, app_id, url in urls:
+                menu.addAction(f"{name} ({app_id})", lambda u=url: QDesktopServices.openUrl(QUrl(u)))
+            self.steamworks.setMenu(menu)
+            self._single_url = None
+        else:
+            self.steamworks.setMenu(None)
+            self._single_url = urls[0][2] if urls else None
 
     def reveal_selected(self):
         rows = self.table.selectionModel().selectedRows()
@@ -92,6 +119,5 @@ class HistoryTab(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def open_steamworks(self):
-        url = history.builds_url(self.ctx.cfg.get("app_id"))
-        if url:
-            QDesktopServices.openUrl(QUrl(url))
+        if self._single_url:
+            QDesktopServices.openUrl(QUrl(self._single_url))

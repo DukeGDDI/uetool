@@ -8,12 +8,15 @@ from PySide6.QtWidgets import (
 from . import commands as cmd
 from . import projectstate
 from .commands import BuildSpec
+from .configstore import steam_field
 from .context import Context
 from .runner import Runner
 from .widgets import muted, set_role
 
 DEFAULT_CONFIG = "(project default)"
 CONFIGS = [DEFAULT_CONFIG, "Shipping", "Development", "DebugGame", "Test"]
+CHOOSE_APP = "(choose…)"
+NO_APP = "(none configured)"
 
 
 class BuildTab(QWidget):
@@ -35,11 +38,15 @@ class BuildTab(QWidget):
         self.config = QComboBox()
         self.config.addItems(CONFIGS)
         self.layer = QComboBox()
+        self.app = QComboBox()
+        self.app.setToolTip("Which of the project's Steam apps receives the upload "
+                            "(upload and release only).")
         for i, (label, w) in enumerate([("Command", self.command), ("Platform", self.platform),
+                                        ("Steam app", self.app),
                                         ("Build configuration", self.config),
                                         ("Custom config layer", self.layer)]):
-            grid.addWidget(muted(label), (i // 2) * 2, i % 2)
-            grid.addWidget(w, (i // 2) * 2 + 1, i % 2)
+            grid.addWidget(muted(label), (i // 3) * 2, i % 3)
+            grid.addWidget(w, (i // 3) * 2 + 1, i % 3)
         outer.addLayout(grid)
         self.layer_hint = muted()
         outer.addWidget(self.layer_hint)
@@ -101,7 +108,7 @@ class BuildTab(QWidget):
         self.log.setMaximumBlockCount(50_000)
         outer.addWidget(self.log, 1)
 
-        for w in (self.command, self.platform, self.config, self.layer):
+        for w in (self.command, self.platform, self.config, self.layer, self.app):
             w.currentIndexChanged.connect(self.refresh)
         for c in (self.bump, self.bootstrap, self.clean):
             c.toggled.connect(self.refresh)
@@ -109,7 +116,7 @@ class BuildTab(QWidget):
         self.dry_btn.clicked.connect(lambda: self.start(dry=True))
         self.cancel_btn.clicked.connect(self.runner.cancel)
         ctx.project_changed.connect(self.on_project)
-        ctx.config_changed.connect(self.refresh)
+        ctx.config_changed.connect(self.on_config)
         self.on_project()
 
     # -- form <-> spec -------------------------------------------------------
@@ -120,7 +127,29 @@ class BuildTab(QWidget):
             command=self.command.currentText(), platform=self.platform.currentText(),
             build_config=None if c == DEFAULT_CONFIG else c,
             bump=self.bump.isChecked(), bootstrap=self.bootstrap.isChecked(),
-            clean=self.clean.isChecked(), custom_config=None if layer == "none" else layer)
+            clean=self.clean.isChecked(), custom_config=None if layer == "none" else layer,
+            app=self.app.currentData())
+
+    def apps(self) -> list[str] | None:
+        """Configured Steam apps, or None when no project is open (skips the check)."""
+        return self.ctx.cfg.configured_apps() if self.ctx.cfg else None
+
+    def populate_apps(self):
+        """Fill the Steam app combo from uetool.toml. One configured app is preselected;
+        several start on a '(choose…)' entry so Run stays disabled until one is picked."""
+        keep = self.app.currentData()
+        apps = self.apps() or []
+        self.app.blockSignals(True)
+        self.app.clear()
+        if not apps:
+            self.app.addItem(NO_APP, None)
+        elif len(apps) > 1:
+            self.app.addItem(CHOOSE_APP, None)
+        for a in apps:
+            self.app.addItem(f"{a} ({self.ctx.cfg.get(steam_field(a, 'app_id'))})", a)
+        if keep in apps:
+            self.app.setCurrentIndex(apps.index(keep) + (1 if len(apps) > 1 else 0))
+        self.app.blockSignals(False)
 
     def on_project(self):
         self.layer.blockSignals(True)
@@ -130,6 +159,11 @@ class BuildTab(QWidget):
             self.layer.addItems(cmd.custom_layers(self.ctx.project))
         self.layer.blockSignals(False)
         self.config.setItemText(0, DEFAULT_CONFIG)
+        self.populate_apps()
+        self.refresh()
+
+    def on_config(self):
+        self.populate_apps()
         self.refresh()
 
     def refresh(self):
@@ -141,6 +175,7 @@ class BuildTab(QWidget):
         self.layer_hint.setVisible(c == "release")
         self.platform.setEnabled(cmd.accepts(c, "platform"))
         self.config.setEnabled(cmd.accepts(c, "config"))
+        self.app.setEnabled(cmd.accepts(c, "app") and self.app.count() > 0)
         for box, flag in ((self.bump, "bump"), (self.bootstrap, "bootstrap"), (self.clean, "clean")):
             box.setEnabled(cmd.accepts(c, flag))
         self.bump.setText("Bump version" if c != "bump" else "Bump version (always)")
@@ -148,10 +183,10 @@ class BuildTab(QWidget):
 
         project = self.ctx.project
         self.preview.setText("$ " + cmd.display(spec, project) if project else "")
-        issues = cmd.blocking(cmd.validate(spec, self.ctx.host, cmd.custom_layers(project) if project else None))
+        layers = cmd.custom_layers(project) if project else None
+        issues = cmd.blocking(cmd.validate(spec, self.ctx.host, layers, self.apps()))
         # The Dry run button rehearses with the bump off, so judge it on that spec.
-        dry_issues = cmd.blocking(cmd.validate(cmd.for_dry_run(spec), self.ctx.host,
-                                               cmd.custom_layers(project) if project else None))
+        dry_issues = cmd.blocking(cmd.validate(cmd.for_dry_run(spec), self.ctx.host, layers, self.apps()))
         # The live (non-dry) run is only blocked by problems unrelated to dry-running.
         shown = issues if not spec.dry_run else dry_issues
         self.issues.setText("\n".join(i.message for i in shown))
@@ -171,7 +206,7 @@ class BuildTab(QWidget):
         ctx, spec = self.ctx, self.spec()
         if dry:
             spec = cmd.for_dry_run(spec)
-        if cmd.blocking(cmd.validate(spec, ctx.host, cmd.custom_layers(ctx.project))):
+        if cmd.blocking(cmd.validate(spec, ctx.host, cmd.custom_layers(ctx.project), self.apps())):
             return
         if ctx.cfg.dirty and QMessageBox.question(
                 self, "Unsaved config",
@@ -181,11 +216,14 @@ class BuildTab(QWidget):
                 self, "Clean build", warn, QMessageBox.Yes | QMessageBox.Cancel,
                 QMessageBox.Cancel) != QMessageBox.Yes:
             return
-        if not dry and spec.command in ("upload", "release") and QMessageBox.question(
-                self, "Upload to Steam",
-                f"This uploads the {spec.platform} build to Steam app {ctx.cfg.get('app_id') or '?'}. "
-                "It won't go live until you set it live in Steamworks. Continue?") != QMessageBox.Yes:
-            return
+        if not dry and spec.command in ("upload", "release"):
+            app = spec.app or (self.apps() or [None])[0]
+            app_id = ctx.cfg.get(steam_field(app, "app_id")) if app else "?"
+            if QMessageBox.question(
+                    self, "Upload to Steam",
+                    f"This uploads the {spec.platform} build to the {app or '?'} Steam app ({app_id}). "
+                    "It won't go live until you set it live in Steamworks. Continue?") != QMessageBox.Yes:
+                return
 
         self.log.clear()
         self.leftover.hide()

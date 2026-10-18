@@ -1,9 +1,16 @@
 """Configuration loading.
 
 Three layers, so nothing secret or machine-specific is committed:
-  1. <project>/uetool.toml         (committed, non-secret: app id, depot ids)
+  1. <project>/uetool.toml         (committed, non-secret: Steam app + depot ids)
   2. <project>/uetool.local.toml   (untracked, per-machine: ue_root, steam user, apple ids)
   3. environment variables         (override both; for CI)
+
+Steam apps live in per-app tables, any subset of which may be present:
+  [steam.main]      the store app
+  [steam.demo]      the demo app
+  [steam.playtest]  the playtest app
+each holding app_id, depot_win_id and (optionally) depot_mac_id. The old flat
+[steam] app_id / depot_*_id layout is rejected with a migration hint.
 
 Machine-WIDE settings are environment variables, not in any toml, because they
 are shared across every project on the machine:
@@ -22,6 +29,43 @@ from pathlib import Path
 
 from .paths import steamcmd_for_sdk
 
+# The Steam apps a project may declare, in display order. Each is a [steam.<name>] table.
+STEAM_APPS = ("main", "demo", "playtest")
+
+# Keys of the pre-multi-app layout; their presence directly under [steam] is an error.
+LEGACY_STEAM_KEYS = ("app_id", "depot_win_id", "depot_mac_id")
+
+MIGRATION_HINT = (
+    "uetool.toml uses the old single-app [steam] layout. Move the ids into a per-app "
+    "table (any of main / demo / playtest may be omitted):\n"
+    "\n"
+    "  [steam]\n"
+    "  win_stage_subdir = \"Windows\"\n"
+    "  mac_stage_subdir = \"Mac\"\n"
+    "\n"
+    "  [steam.main]\n"
+    "  app_id = \"...\"\n"
+    "  depot_win_id = \"...\"\n"
+    "  depot_mac_id = \"...\"\n"
+    "\n"
+    "  [steam.playtest]\n"
+    "  app_id = \"...\"\n"
+    "  depot_win_id = \"...\"\n"
+)
+
+
+def is_placeholder(value) -> bool:
+    """Steam ids that are empty or still the template's 0000… count as unset."""
+    v = str(value if value is not None else "").strip()
+    return v == "" or v.startswith("0000")
+
+
+@dataclass(frozen=True)
+class SteamApp:
+    name: str                      # "main" | "demo" | "playtest"
+    app_id: str
+    depot_ids: dict[str, str]      # platform -> depot id, e.g. {"win": "...", "mac": "..."}
+
 
 @dataclass
 class Config:
@@ -34,8 +78,7 @@ class Config:
     ue_root: Path | None
     stage_dir: Path                # UE's -stage output root (Saved/StagedBuilds)
     build_config: str
-    app_id: str
-    depot_ids: dict[str, str]      # platform -> depot id, e.g. {"win": "...", "mac": "..."}
+    steam_apps: dict[str, SteamApp]  # only the configured apps, keyed by name
     stage_subdirs: dict[str, str]  # platform -> staged subfolder, e.g. {"win": "Windows"}
     steam_user: str
     steam_password: str | None
@@ -64,6 +107,64 @@ def _find_uproject(root: Path, name_override: str | None) -> Path:
     raise SystemExit(
         f"Expected exactly one .uproject in {root}, found {len(uprojects)}. "
         "Set [project] name in uetool.toml to pick one, or pass the right -P path."
+    )
+
+
+def has_legacy_steam_keys(steam_section: dict) -> bool:
+    return any(k in steam_section for k in LEGACY_STEAM_KEYS)
+
+
+def _load_steam_apps(base: dict, local: dict) -> dict[str, SteamApp]:
+    """Read [steam.<name>] from both files (local wins per key). Tables whose app_id
+    is empty or a 0000… placeholder are treated as 'this project has no such app'."""
+    for layer in (base, local):
+        if has_legacy_steam_keys(layer.get("steam", {})):
+            raise SystemExit(MIGRATION_HINT)
+    apps: dict[str, SteamApp] = {}
+    for name in STEAM_APPS:
+        b = base.get("steam", {}).get(name, {})
+        l = local.get("steam", {}).get(name, {})
+        if not isinstance(b, dict) or not isinstance(l, dict):
+            raise SystemExit(f"[steam.{name}] must be a table of app_id / depot ids.")
+        merged = {**b, **l}
+        app_id = str(merged.get("app_id", "")).strip()
+        if is_placeholder(app_id):
+            continue
+        apps[name] = SteamApp(
+            name=name,
+            app_id=app_id,
+            depot_ids={
+                "win": str(merged.get("depot_win_id", "")).strip(),
+                "mac": str(merged.get("depot_mac_id", "")).strip(),
+            },
+        )
+    return apps
+
+
+def select_app(cfg: Config, name: str | None) -> SteamApp:
+    """The Steam app an upload goes to. An explicit name must be configured; with no
+    name, the single configured app is used, and several configured apps require a
+    choice (so a store upload is never accidental)."""
+    apps = cfg.steam_apps
+    if not apps:
+        raise SystemExit(
+            "No Steam app configured. Add a [steam.main] (or demo / playtest) table with "
+            "app_id and depot ids to uetool.toml."
+        )
+    if name is not None:
+        if name not in STEAM_APPS:
+            raise SystemExit(f"Unknown Steam app '{name}'. Choose one of: {', '.join(STEAM_APPS)}.")
+        if name not in apps:
+            raise SystemExit(
+                f"Steam app '{name}' is not configured in uetool.toml "
+                f"(configured: {', '.join(apps)})."
+            )
+        return apps[name]
+    if len(apps) == 1:
+        return next(iter(apps.values()))
+    raise SystemExit(
+        "Several Steam apps are configured; pick one with --app "
+        f"{{{','.join(apps)}}}."
     )
 
 
@@ -101,10 +202,6 @@ def load(project_root: Path) -> Config:
     )
     apple_password = os.environ.get("UETOOL_APPLE_APP_PASSWORD")  # never from a file
 
-    depot_ids = {
-        "win": str(get("steam", "depot_win_id", "")),
-        "mac": str(get("steam", "depot_mac_id", "")),
-    }
     stage_subdirs = {
         "win": get("steam", "win_stage_subdir", "Windows"),
         "mac": get("steam", "mac_stage_subdir", "Mac"),
@@ -120,8 +217,7 @@ def load(project_root: Path) -> Config:
         ue_root=ue_root,
         stage_dir=(root / stage_rel),
         build_config=build_config,
-        app_id=str(get("steam", "app_id", "")),
-        depot_ids=depot_ids,
+        steam_apps=_load_steam_apps(base, local),
         stage_subdirs=stage_subdirs,
         steam_user=steam_user,
         steam_password=steam_password,

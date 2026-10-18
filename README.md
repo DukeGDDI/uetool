@@ -120,7 +120,9 @@ change, or moving/replacing steamcmd. The sentry is per-machine + per-OS-user, s
 At the **root of your UE project** (next to `YourGame.uproject`):
 
 1. Copy the two templates from this repo and fill them in:
-   - `uetool.toml` — **committed**, non-secret (Steam `app_id`, depot ids, build config).
+   - `uetool.toml` — **committed**, non-secret: build config and one `[steam.<app>]` table
+     per Steam app the game has (`main`, `demo`, `playtest` — any subset), each with its
+     `app_id` and depot ids.
    - `uetool.local.toml` — **untracked**, per-machine (`ue_root`; Steam `user`; Apple ids).
      `ue_root` is platform-specific, e.g. `"/Users/Shared/Epic Games/UE_5.7"` (macOS)
      or `"C:/Program Files/Epic Games/UE_5.7"` (Windows — forward slashes).
@@ -143,6 +145,7 @@ there is nothing project-specific to hardcode.
 usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release} ...
               [--platform win|mac] [--config Shipping] [--dry-run]
               [--no-bump] [--no-bootstrap] [--clean] [--custom-config NAME]
+              [--app main|demo|playtest]
 ```
 
 Run from inside the project, or point at it with `-P`:
@@ -153,15 +156,46 @@ uetool bootstrap                         # build the editor target (headless; fo
 uetool package --platform mac            # bump + RunUAT package
 uetool package --platform mac --no-bump  # package without bumping
 uetool notarize                          # sign + notarize + staple the staged macOS .app
-uetool upload --platform mac             # push the staged build to Steam
+uetool upload --platform mac --app playtest      # push the staged build to the playtest app
 uetool archive --platform win            # zip the staged build for non-Steam distribution
-uetool release --platform mac            # bump -> package -> [notarize on mac] -> upload
-uetool -P ~/games/MyGame release --platform win   # operate on a project elsewhere
+uetool release --platform mac --app main # bump -> package -> [notarize on mac] -> upload to the store app
+uetool -P ~/games/MyGame release --platform win --app demo   # operate on a project elsewhere
 ```
 
 `--platform` defaults to the host (`win` on Windows, `mac` on a Mac). `--dry-run`
 prints every external command without executing it (and still validates config) — the
 safe way to verify wiring with no engine or Steam access.
+
+### Steam apps (`--app main|demo|playtest`)
+
+A game on Steam is often several Steamworks apps: the **store** app, a **demo** app and a
+**playtest** app, each with its own app id and depots. `uetool.toml` declares whichever of
+the three the project has, as `[steam.main]`, `[steam.demo]` and `[steam.playtest]` tables
+(omit the ones you don't have):
+
+```toml
+[steam.main]
+app_id = "4547240"
+depot_win_id = "4547241"
+depot_mac_id = "4547242"
+
+[steam.playtest]
+app_id = "4852730"
+depot_win_id = "4852731"
+depot_mac_id = "4852732"
+```
+
+`upload` and `release` take `--app` to pick the destination. With exactly one app
+configured the flag may be omitted; with two or more it is **required** — the CLI refuses
+and lists the choices, so a build never lands on the store app by accident. `release`
+resolves the app *before* packaging, so a missing `--app` fails in a second, not after an
+hour-long cook. The packaging, notarization and versioning steps are the same for every
+app; only the app/depot ids in the generated VDFs (kept per app under
+`.uetool/steam_build/<app>/`) differ.
+
+The older single-app layout (`app_id` / `depot_*_id` directly under `[steam]`) is no longer
+read; the tool exits with the new layout spelled out, and the Control Panel's Setup tab
+flags it.
 
 ### Fresh checkout / CI
 
@@ -269,7 +303,7 @@ Three sources, lowest precedence first: `uetool.toml` < `uetool.local.toml` < en
 | Where | Scope | Holds |
 |-------|-------|-------|
 | **Env vars** (set once on the machine) | machine-wide | `UETOOL_PYTHON`, `UETOOL_STEAM_SDK`, secret passwords; optional overrides (`UETOOL_UE_ROOT`, `UETOOL_STEAM_USER`, `UETOOL_APPLE_*`, `UETOOL_STEAMCMD`) |
-| **`uetool.toml`** (committed, project root) | per-project | `app_id`, depot ids, `build_config`, stage subdirs |
+| **`uetool.toml`** (committed, project root) | per-project | `[steam.main|demo|playtest]` app + depot ids, `build_config`, stage subdirs |
 | **`uetool.local.toml`** (untracked, project root) | per-project, per-machine | `ue_root`, Steam `user`, Apple `apple_id`/`team_id`/`signing_identity` |
 
 Files the tool reads/writes at the **project root**:
@@ -300,7 +334,7 @@ ProjectVersion in Config/DefaultGame.ini   (authored "vX.Y.Z" by hand; never car
    Saved/StagedBuilds/<Windows|Mac>/   (self-contained build embedding vX.Y.Z.N;
                                         source DefaultGame.ini stays vX.Y.Z)
         │  notarize() [mac only]: sign inside-out -> notarytool submit -> staple
-        │  upload(): render VDFs into .uetool/, run steamcmd +run_app_build
+        │  upload(--app X): render VDFs into .uetool/steam_build/X/, run steamcmd +run_app_build
         ▼
    Steam build (labeled "vX.Y.Z.N"), NOT set live automatically
 ```
@@ -358,7 +392,8 @@ the CLI stays stdlib-only; the UI's own dependencies live in `ui/requirements.tx
 
 Tabs: **Setup** (a doctor that checks Python, `.uproject`, engine, steamcmd, Steam
 login/ids, Apple fields, and a stamped `DefaultGame.ini`, with one-click fixes),
-**Build** (form → command preview → live log, Cancel), **Config** (edits
-`uetool.toml` / `uetool.local.toml` preserving comments), **History** (read-only).
+**Build** (form incl. the Steam app to upload to → command preview → live log, Cancel),
+**Config** (edits `uetool.toml` / `uetool.local.toml` preserving comments, one box per
+Steam app), **History** (read-only, with a Steamworks builds link per app).
 Passwords go to the OS keychain and reach the CLI only as environment variables of
 the child process. Tests: `python -m pytest`.
