@@ -65,13 +65,15 @@ def test_dry_run_package_streams_log_and_never_bumps(win, project):
     assert "ProjectVersion=v1.2.0\n" in (project / "Config/DefaultGame.ini").read_text()
 
 
-def test_release_with_custom_config_is_blocked(win):
+def test_release_allows_custom_config(win):
     b = build(win)
-    b.command.setCurrentText("package")
-    b.layer.setCurrentText("Arcware")
-    assert b.run_btn.isEnabled()
     b.command.setCurrentText("release")
-    assert not b.run_btn.isEnabled() and "not allowed" in b.issues.text()
+    b.layer.setCurrentText("Arcware")
+    # The custom layer is no longer blocked on release: the widget is enabled, no
+    # "not allowed" error is raised, and the flag makes it into the command.
+    assert b.layer.isEnabled()
+    assert "not allowed" not in b.issues.text()
+    assert "--custom-config" in b.preview.text() and "Arcware" in b.preview.text()
 
 
 def test_notarize_blocked_off_mac(win):

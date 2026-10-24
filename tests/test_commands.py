@@ -57,15 +57,25 @@ def test_caps_match_cli_parser():
         assert {flagmap[f] for f in c.CAPS[name]} == opts & set(flagmap.values()), name
 
 
-def test_validate_release_custom_config_blocked():
-    issues = c.validate(BuildSpec(custom_config="Arcware", bump=False), "win")
-    assert any("not allowed with release" in i.message for i in c.blocking(issues))
+def test_validate_release_custom_config_allowed():
+    # A custom layer on release is permitted (e.g. a Demo layer -> Demo app); it is only
+    # an error if the named layer folder doesn't exist.
+    ok = BuildSpec(command="release", custom_config="Demo", bump=False, app="demo")
+    assert not c.blocking(c.validate(ok, "win", layers=["Demo"], apps=["demo"]))
+    missing = BuildSpec(command="release", custom_config="Nope", bump=False, app="demo")
+    assert c.blocking(c.validate(missing, "win", layers=["Demo"], apps=["demo"]))
 
 
 def test_validate_custom_config_must_exist_for_package():
     s = BuildSpec(command="package", custom_config="Nope", bump=False)
     assert c.blocking(c.validate(s, "win", layers=["Arcware"]))
     assert not c.blocking(c.validate(s, "win", layers=["Nope"]))
+
+
+def test_release_custom_config_in_argv():
+    # release must now emit --custom-config (CAPS already allows it).
+    s = BuildSpec(command="release", platform="win", custom_config="Demo", bump=False, app="demo")
+    assert "--custom-config" in argv(s) and "Demo" in argv(s)
 
 
 def test_validate_steam_app_choice():

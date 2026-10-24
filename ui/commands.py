@@ -102,10 +102,7 @@ def validate(spec: BuildSpec, host: str, layers: list[str] | None = None,
                              f"(configured: {', '.join(apps) or 'none'})."))
 
     if spec.custom_config and accepts(spec.command, "custom_config"):
-        if spec.command == "release":
-            out.append(Issue(ERROR, "--custom-config is not allowed with release, which "
-                             "uploads to Steam. Use package + archive for a non-Steam build."))
-        elif layers is not None and spec.custom_config not in layers:
+        if layers is not None and spec.custom_config not in layers:
             out.append(Issue(ERROR, f"No Config/Custom/{spec.custom_config} folder in the project."))
 
     if needs_notarize(spec) and host != "mac":

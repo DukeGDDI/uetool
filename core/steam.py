@@ -24,11 +24,15 @@ def _read_version(cfg: Config) -> str:
     )
 
 
-def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> None:
+def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None,
+           custom_config: str | None = None) -> None:
     """Push the staged `target` build to one of the project's Steam apps.
 
     `app` is "main" / "demo" / "playtest"; None means the single configured app
-    (several configured apps make the choice mandatory, see config.select_app)."""
+    (several configured apps make the choice mandatory, see config.select_app).
+    `custom_config`, when set, is the Config/Custom layer cooked into this build; it
+    is tagged into the Steam build description so the destination stays honest (a
+    custom-layer build is otherwise indistinguishable in the staged output)."""
     steam_app = select_app(cfg, app)
     if not cfg.steam_user:
         raise SystemExit(
@@ -43,6 +47,7 @@ def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> N
         )
 
     version = _read_version(cfg)
+    desc = f"{version} ({custom_config})" if custom_config else version
     content_root = cfg.stage_dir / cfg.stage_subdirs[target]
     if not dry_run and not content_root.exists():
         raise SystemExit(
@@ -60,7 +65,7 @@ def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> N
     repl = {
         "@APP_ID@": steam_app.app_id,
         "@DEPOT_ID@": depot_id,
-        "@DESC@": version,
+        "@DESC@": desc,
         # Forward slashes: ContentBuilder accepts them on every OS and avoids
         # backslash-escaping headaches inside VDF.
         "@CONTENT_ROOT@": content_root.resolve().as_posix(),
@@ -77,7 +82,7 @@ def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> N
     depot_vdf.write_text(_render(depot_tpl, repl), encoding="utf-8")
 
     print(f"Rendered Steam scripts in {gen} ({steam_app.name} app {steam_app.app_id}, "
-          f"depot {depot_id}, {version})")
+          f"depot {depot_id}, {desc})")
 
     login = ["+login", cfg.steam_user]
     if cfg.steam_password:
@@ -90,7 +95,7 @@ def upload(cfg: Config, target: str, dry_run: bool, app: str | None = None) -> N
         # The upload does NOT promote the build — that's a deliberate manual step.
         bar = "=" * 72
         print(f"\n{bar}")
-        print(f"Uploaded {version} to {steam_app.name} app {steam_app.app_id}, depot {depot_id}.")
+        print(f"Uploaded {desc} to {steam_app.name} app {steam_app.app_id}, depot {depot_id}.")
         print("This build is NOT live yet. Set it live on a branch in Steamworks:")
         print(f"  https://partner.steamgames.com/apps/builds/{steam_app.app_id}")
         print(bar)

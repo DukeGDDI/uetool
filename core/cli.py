@@ -9,7 +9,7 @@ the UE project at the current directory, or one given with -P/--project:
                    [--custom-config Arcware]
     uetool upload [--app main|demo|playtest]
     uetool notarize
-    uetool release [--app ...]           # bump -> package -> [notarize on mac] -> upload
+    uetool release [--app ...] [--custom-config NAME]   # bump -> package -> [notarize] -> upload
     uetool -P /path/to/Project release --platform mac --app playtest
 
 --app picks which of the project's Steam apps ([steam.main] / [steam.demo] /
@@ -52,9 +52,10 @@ def _add_common(sp, allow_no_bump=False):
 
 def _add_custom_config(sp):
     sp.add_argument("--custom-config", dest="custom_config", default=None, metavar="NAME",
-                    help="Apply the Config/Custom/NAME ini layer (RunUAT -CustomConfig). "
-                         "Use for builds aimed at a different host, e.g. --custom-config "
-                         "Arcware for pixel streaming. Omit for storefront builds.")
+                    help="Apply the Config/Custom/NAME ini layer for this build, e.g. "
+                         "--custom-config Arcware (pixel streaming) or --custom-config Demo "
+                         "(Steam demo app). On release the layer name is tagged into the Steam "
+                         "build description. Omit for a plain storefront build.")
 
 
 def _add_app(sp):
@@ -128,27 +129,21 @@ def main() -> int:
         notarize_mod.notarize(cfg, args.dry_run)
 
     elif args.command == "release":
-        # release ends in a Steam upload. A custom ini layer exists to make a build for
-        # somewhere that is NOT the storefront, so shipping one to a depot is almost
-        # certainly a mistake — and a silent one, since the layer leaves no trace in the
-        # staged output. Refuse rather than warn.
-        if args.custom_config:
-            raise SystemExit(
-                f"--custom-config {args.custom_config} is not allowed with `release`, "
-                "which uploads to Steam.\n"
-                f"For a non-Steam build use:  uetool package --platform {args.platform} "
-                f"--custom-config {args.custom_config}  &&  uetool archive --platform {args.platform}"
-            )
+        # A custom ini layer is allowed here — e.g. the Demo layer uploaded to the Demo
+        # app. It leaves no trace in the staged output, so to keep the destination honest
+        # the layer name is tagged into the Steam build description (see steam.upload).
         # Resolve the target app before spending an hour on a build, so a missing or
         # ambiguous --app fails up front rather than after packaging.
         config.select_app(cfg, args.app)
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
         package_mod.package(cfg, args.platform, build_config, args.dry_run,
-                            bootstrap_if_needed=not args.no_bootstrap, clean=args.clean)
+                            bootstrap_if_needed=not args.no_bootstrap, clean=args.clean,
+                            custom_config=args.custom_config)
         # macOS builds must be signed + notarized before they leave the machine.
         if args.platform == "mac":
             notarize_mod.notarize(cfg, args.dry_run)
-        steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app)
+        steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app,
+                         custom_config=args.custom_config)
 
     return 0

@@ -283,16 +283,21 @@ uetool package --platform win --custom-config Arcware
 uetool archive --platform win
 
 # storefront build: base ini only — no flag, nothing to remember
-uetool release --platform win
+uetool release --platform win --app main
+
+# Steam demo build: the Demo layer, uploaded to the demo app
+uetool release --platform win --app demo --custom-config Demo
 ```
 
 It is deliberately **not** settable in `uetool.toml`. A committed default would apply
 silently to every build including the ones headed for a depot, which is exactly the mistake
 the layer exists to prevent — so it is opt-in per run.
 
-For the same reason `release` **refuses** `--custom-config`: that command ends in a Steam
-upload, and a custom layer leaves no visible trace in the staged output, so the mistake
-would be silent. Use `package` + `archive` instead (the error message says so).
+`release` **accepts** `--custom-config` too — e.g. the `Demo` layer uploaded to the demo
+app, or a `Playtest` layer to the playtest app. Because a custom layer leaves no visible
+trace in the staged output, uetool tags the layer name into the **Steam build description**
+(`vX.Y.Z.N (Demo)`), so the destination is identifiable in the Steamworks build history
+rather than silent. (The UI also names the layer in its upload confirmation.)
 
 > Note: `archive` names the zip `<Project>-<version>-<platform>.zip` with no layer suffix,
 > so a streaming zip and a storefront zip of the same version collide. Move or rename one

@@ -169,10 +169,12 @@ class BuildTab(QWidget):
     def refresh(self):
         spec = self.spec()
         c = spec.command
-        self.layer.setEnabled(cmd.accepts(c, "custom_config") and c != "release")
-        self.layer_hint.setText("Disabled for release, which uploads to Steam. Use package, then archive."
-                                if c == "release" else "")
-        self.layer_hint.setVisible(c == "release")
+        self.layer.setEnabled(cmd.accepts(c, "custom_config"))
+        rel_layer = c == "release" and bool(spec.custom_config)
+        self.layer_hint.setText(
+            f"The '{spec.custom_config}' layer is cooked in and tagged in the Steam build "
+            "description, so the destination stays identifiable." if rel_layer else "")
+        self.layer_hint.setVisible(rel_layer)
         self.platform.setEnabled(cmd.accepts(c, "platform"))
         self.config.setEnabled(cmd.accepts(c, "config"))
         self.app.setEnabled(cmd.accepts(c, "app") and self.app.count() > 0)
@@ -219,9 +221,12 @@ class BuildTab(QWidget):
         if not dry and spec.command in ("upload", "release"):
             app = spec.app or (self.apps() or [None])[0]
             app_id = ctx.cfg.get(steam_field(app, "app_id")) if app else "?"
+            layer_note = (f" This build has the '{spec.custom_config}' custom config layer cooked in "
+                          "(tagged in the Steam build description)."
+                          if spec.custom_config and spec.command == "release" else "")
             if QMessageBox.question(
                     self, "Upload to Steam",
-                    f"This uploads the {spec.platform} build to the {app or '?'} Steam app ({app_id}). "
+                    f"This uploads the {spec.platform} build to the {app or '?'} Steam app ({app_id}).{layer_note} "
                     "It won't go live until you set it live in Steamworks. Continue?") != QMessageBox.Yes:
                 return
 
