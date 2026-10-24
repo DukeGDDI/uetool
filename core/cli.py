@@ -10,6 +10,7 @@ the UE project at the current directory, or one given with -P/--project:
     uetool upload [--app main|demo|playtest]
     uetool notarize
     uetool release [--app ...] [--custom-config NAME]   # bump -> package -> [notarize] -> upload
+    uetool ui                            # open the PySide6 Control Panel (detached)
     uetool -P /path/to/Project release --platform mac --app playtest
 
 --app picks which of the project's Steam apps ([steam.main] / [steam.demo] /
@@ -94,8 +95,21 @@ def main() -> int:
     _add_common(release_p, allow_no_bump=True)
     _add_custom_config(release_p)
     _add_app(release_p)
+    ui_p = sub.add_parser("ui", help="Open the PySide6 Control Panel (launched detached).")
+    ui_p.add_argument("--dry-run", action="store_true",
+                      help="Print the launch command instead of starting the UI.")
 
     args = parser.parse_args()
+
+    # The Control Panel is how you SET UP a project, so it must open before (and without)
+    # config.load — a fresh or unconfigured project must not block it. It's launched
+    # detached, so the terminal returns immediately. Pass the project only when the dir
+    # actually holds a .uproject; otherwise the UI falls back to its last-used project.
+    if args.command == "ui":
+        from . import uilaunch
+        proj = Path(args.project).expanduser().resolve()
+        target = proj if proj.is_dir() and list(proj.glob("*.uproject")) else None
+        return uilaunch.launch(target, args.dry_run)
 
     project_root = Path(args.project).expanduser().resolve()
     if not project_root.is_dir():

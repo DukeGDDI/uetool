@@ -145,7 +145,7 @@ there is nothing project-specific to hardcode.
 ## Usage
 
 ```
-usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release} ...
+usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release,ui} ...
               [--platform win|mac] [--config Shipping] [--dry-run]
               [--no-bump] [--no-bootstrap] [--clean] [--custom-config NAME]
               [--app main|demo|playtest]
@@ -433,16 +433,26 @@ python -m venv .venv
 .venv\Scripts\pip install -r ui\requirements.txt
 ```
 
-**Launch** — optionally pass the project folder (or its `.uproject`); without it the
-app reopens the last project you used, or you pick one with *Browse…*:
+**Launch** — the easy way, from anywhere `uetool` is on `PATH`:
 
 ```bash
-# macOS / Linux
-.venv/bin/python ui/app.py /path/to/YourGame
+uetool ui                 # opens the current project (if the dir has a .uproject)
+uetool -P /path/to/Game ui
 ```
-```bat
-:: Windows
-.venv\Scripts\python ui\app.py D:\path\to\YourGame
+
+`uetool ui` finds a PySide6 interpreter — `UETOOL_UI_PYTHON` if set, else the `.venv`
+in the uetool **install** folder (the one created above; never the project folder), else
+the current interpreter if it already has PySide6 — and launches the app **detached**, so
+your terminal returns immediately and closing it doesn't kill the window. Run from a folder
+with no `.uproject` and it reopens your last project (or pick one with *Browse…*). If no
+PySide6 interpreter is found it prints the venv setup commands. `uetool ui --dry-run` shows
+the launch command without starting anything.
+
+You can still launch it directly if you prefer:
+
+```bash
+.venv/bin/python ui/app.py /path/to/YourGame          # macOS / Linux
+.venv\Scripts\python ui\app.py D:\path\to\YourGame    # Windows
 ```
 
 **First run:** on the **Config** tab set *Steam SDK folder* to the folder containing

@@ -51,9 +51,11 @@ def test_caps_match_cli_parser():
     flagmap = {"platform": "--platform", "config": "--config", "dry_run": "--dry-run",
                "bump": "--no-bump", "bootstrap": "--no-bootstrap", "clean": "--clean",
                "custom_config": "--custom-config", "app": "--app"}
-    assert set(sub.choices) == set(c.CAPS)
-    for name, parser in sub.choices.items():
-        opts = {o for a in parser._actions for o in a.option_strings}
+    # `ui` is a CLI-only launcher (opens the Control Panel); the UI form doesn't model it,
+    # so it has no CAPS entry. Every other subcommand must match CAPS exactly.
+    assert set(sub.choices) - {"ui"} == set(c.CAPS)
+    for name in c.CAPS:
+        opts = {o for a in sub.choices[name]._actions for o in a.option_strings}
         assert {flagmap[f] for f in c.CAPS[name]} == opts & set(flagmap.values()), name
 
 
