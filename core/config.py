@@ -12,6 +12,11 @@ Steam apps live in per-app tables, any subset of which may be present:
 each holding app_id, depot_win_id and (optionally) depot_mac_id. The old flat
 [steam] app_id / depot_*_id layout is rejected with a migration hint.
 
+An optional [epic] table adds an Epic Games Store target (one artifact, uploaded via
+BuildPatchTool): org_id, product_id, artifact_id, client_id (non-secret ids). The BPT
+client secret is env-only (UETOOL_EPIC_CLIENT_SECRET); BuildPatchTool is resolved from
+UETOOL_EPIC_BPT or the UETOOL_EPIC_SDK folder.
+
 Machine-WIDE settings are environment variables, not in any toml, because they
 are shared across every project on the machine:
   UETOOL_PYTHON       interpreter for the launcher (handled by the launcher itself)
@@ -27,7 +32,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .paths import steamcmd_for_sdk
+from .paths import buildpatchtool_for_sdk, steamcmd_for_sdk
 
 # The Steam apps a project may declare, in display order. Each is a [steam.<name>] table.
 STEAM_APPS = ("main", "demo", "playtest")
@@ -67,6 +72,18 @@ class SteamApp:
     depot_ids: dict[str, str]      # platform -> depot id, e.g. {"win": "...", "mac": "..."}
 
 
+@dataclass(frozen=True)
+class EpicConfig:
+    """Epic Games Store target (one artifact), uploaded via BuildPatchTool."""
+    org_id: str
+    product_id: str
+    artifact_id: str
+    client_id: str                 # the BPT Client ID (not an EOS/SDK client)
+    app_launch: dict[str, str]     # platform -> exe relative to BuildRoot ("" = derive from name)
+    bpt: str                       # resolved BuildPatchTool path or "BuildPatchTool" on PATH
+    client_secret: str | None      # env only (UETOOL_EPIC_CLIENT_SECRET), never a file
+
+
 @dataclass
 class Config:
     project_root: Path
@@ -79,6 +96,7 @@ class Config:
     stage_dir: Path                # UE's -stage output root (Saved/StagedBuilds)
     build_config: str
     steam_apps: dict[str, SteamApp]  # only the configured apps, keyed by name
+    epic: "EpicConfig | None"      # the [epic] target, or None when not configured
     stage_subdirs: dict[str, str]  # platform -> staged subfolder, e.g. {"win": "Windows"}
     steam_user: str
     steam_password: str | None
@@ -168,6 +186,36 @@ def select_app(cfg: Config, name: str | None) -> SteamApp:
     )
 
 
+def _load_epic(base: dict, local: dict) -> "EpicConfig | None":
+    """Read the [epic] table (local wins per key). None when nothing is configured.
+    org/product/artifact/client_id are non-secret ids; the secret is env-only."""
+    b, l = base.get("epic", {}), local.get("epic", {})
+    if not isinstance(b, dict) or not isinstance(l, dict):
+        raise SystemExit("[epic] must be a table (org_id, product_id, artifact_id, client_id).")
+    m = {**b, **l}
+    org = str(m.get("org_id", "")).strip()
+    product = str(m.get("product_id", "")).strip()
+    artifact = str(m.get("artifact_id", "")).strip()
+    client = str(m.get("client_id", "")).strip()
+    if not any((org, product, artifact, client)):
+        return None  # no [epic] section, or all blank -> this project has no Epic target
+
+    # BuildPatchTool: explicit path > derived from the machine-wide SDK folder >
+    # toml value > "BuildPatchTool" on PATH.
+    bpt = os.environ.get("UETOOL_EPIC_BPT")
+    if not bpt:
+        sdk = os.environ.get("UETOOL_EPIC_SDK")
+        bpt = buildpatchtool_for_sdk(Path(sdk)) if sdk else str(m.get("buildpatchtool", "BuildPatchTool"))
+
+    return EpicConfig(
+        org_id=org, product_id=product, artifact_id=artifact, client_id=client,
+        app_launch={"win": str(m.get("app_launch_win", "")).strip(),
+                    "mac": str(m.get("app_launch_mac", "")).strip()},
+        bpt=bpt,
+        client_secret=os.environ.get("UETOOL_EPIC_CLIENT_SECRET"),  # never from a file
+    )
+
+
 def load(project_root: Path) -> Config:
     root = Path(project_root).expanduser().resolve()
     base = _load_toml(root / "uetool.toml")
@@ -218,6 +266,7 @@ def load(project_root: Path) -> Config:
         stage_dir=(root / stage_rel),
         build_config=build_config,
         steam_apps=_load_steam_apps(base, local),
+        epic=_load_epic(base, local),
         stage_subdirs=stage_subdirs,
         steam_user=steam_user,
         steam_password=steam_password,

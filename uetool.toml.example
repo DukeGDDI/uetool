@@ -33,3 +33,15 @@ depot_win_id = "0000001"
 # app_id = "0000000"
 # depot_win_id = "0000001"
 # depot_mac_id = "0000002"
+
+# Optional: Epic Games Store target (uploaded with BuildPatchTool). Uncomment and fill in
+# the ids from the Epic Dev Portal; they are non-secret. The BPT Client Secret is env-only
+# (UETOOL_EPIC_CLIENT_SECRET), and BuildPatchTool is located via UETOOL_EPIC_SDK/UETOOL_EPIC_BPT.
+# Publish with `uetool release --store epic` (or `upload --store epic`).
+# [epic]
+# org_id = "o-xxxxxxxx"
+# product_id = "xxxxxxxx"
+# artifact_id = "xxxxxxxx"
+# client_id = "xyza…"                                  # the BPT Client ID (does start with xyza)
+# app_launch_win = "MyGame.exe"                        # optional; defaults from the project name
+# app_launch_mac = "MyGame.app/Contents/MacOS/MyGame"  # mac = the inner binary, not the .app

@@ -148,7 +148,7 @@ there is nothing project-specific to hardcode.
 usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release,ui} ...
               [--platform win|mac] [--config Shipping] [--dry-run]
               [--no-bump] [--no-bootstrap] [--clean] [--custom-config NAME]
-              [--app main|demo|playtest]
+              [--store steam|epic] [--app main|demo|playtest]
 ```
 
 Run from inside the project, or point at it with `-P`:
@@ -162,6 +162,7 @@ uetool notarize                          # sign + notarize + staple the staged m
 uetool upload --platform mac --app playtest      # push the staged build to the playtest app
 uetool archive --platform win            # zip the staged build for non-Steam distribution
 uetool release --platform mac --app main # bump -> package -> [notarize on mac] -> upload to the store app
+uetool release --platform win --store epic       # same build, uploaded to Epic via BuildPatchTool
 uetool -P ~/games/MyGame release --platform win --app demo   # operate on a project elsewhere
 ```
 
@@ -199,6 +200,48 @@ app; only the app/depot ids in the generated VDFs (kept per app under
 The older single-app layout (`app_id` / `depot_*_id` directly under `[steam]`) is no longer
 read; the tool exits with the new layout spelled out, and the Control Panel's Setup tab
 flags it.
+
+### Epic Games Store (`--store epic`)
+
+`upload` and `release` take `--store {steam,epic}` (default `steam`). With `--store epic`
+uetool uploads the **same staged build** to an Epic artifact via Epic's **BuildPatchTool**:
+
+```toml
+[epic]                       # ids are on the Epic Dev Portal (non-secret)
+org_id = "o-xxxxxxxx"
+product_id = "xxxxxxxx"
+artifact_id = "xxxxxxxx"
+client_id = "xyza…"          # the BPT Client ID (it does start with xyza)
+# app_launch_win = "MyGame.exe"                      # defaults from the project name
+# app_launch_mac = "MyGame.app/Contents/MacOS/MyGame"
+```
+
+Setup (once): download **BuildPatchTool** from the Dev Portal (*Epic Games Store → Artifacts
+and Binaries → Download build patch tool*), extract it, and point uetool at the folder with
+`UETOOL_EPIC_SDK` (or a direct path in `UETOOL_EPIC_BPT`). The **BPT Client Secret** is
+env-only, like every other secret:
+
+```bash
+export UETOOL_EPIC_SDK="$HOME/BuildPatchTool"
+export UETOOL_EPIC_CLIENT_SECRET='…'     # Dev Portal → Product Settings → BPT credentials
+```
+
+```bash
+uetool release --platform win --store epic         # bump -> package -> BPT upload
+uetool upload  --platform mac --store epic          # mac: notarize first, like Steam
+```
+
+Notes specific to Epic:
+- **A Mac Epic build still notarizes** (Developer ID) before upload — Epic distributes
+  outside the App Store, exactly like Steam.
+- **`BuildVersion` is platform-distinct and whitespace-free:** uetool labels the build
+  `vX.Y.Z.N-win` / `vX.Y.Z.N-mac` (a custom layer becomes `…-mac_Demo`), because BPT forbids
+  one version string spanning both platforms and disallows spaces.
+- **Upload ≠ live.** BPT registers the binary in your Dev sandbox; it goes Live when you
+  **assign the platform to the artifact** on the *Artifacts and Binaries* page (self-service
+  publishing). uetool prints the reminder with the portal link.
+- `--app` is Steam-only; Epic has one `[epic]` artifact (multiple artifacts can be added
+  later the same way Steam grew multiple apps).
 
 ### Stable launch paths (`<Project>.app` / `<Project>.exe`)
 

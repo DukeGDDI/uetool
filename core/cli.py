@@ -7,7 +7,7 @@ the UE project at the current directory, or one given with -P/--project:
     uetool bump
     uetool package [--platform win|mac] [--config Shipping] [--no-bump]
                    [--custom-config Arcware]
-    uetool upload [--app main|demo|playtest]
+    uetool upload [--store steam|epic] [--app main|demo|playtest]
     uetool notarize
     uetool release [--app ...] [--custom-config NAME]   # bump -> package -> [notarize] -> upload
     uetool ui                            # open the PySide6 Control Panel (detached)
@@ -27,6 +27,7 @@ from . import (
     version as version_mod,
     package as package_mod,
     steam as steam_mod,
+    epic as epic_mod,
     notarize as notarize_mod,
     archive as archive_mod,
 )
@@ -63,7 +64,13 @@ def _add_app(sp):
     sp.add_argument("--app", choices=list(STEAM_APPS), default=None,
                     help="Which Steam app to upload to ([steam.<app>] in uetool.toml). "
                          "Required when more than one app is configured; otherwise the "
-                         "single configured app is used.")
+                         "single configured app is used. (Steam only.)")
+
+
+def _add_store(sp):
+    sp.add_argument("--store", choices=["steam", "epic"], default="steam",
+                    help="Publishing destination (default: steam). epic uploads the staged "
+                         "build to the [epic] artifact via BuildPatchTool.")
 
 
 def main() -> int:
@@ -81,8 +88,9 @@ def main() -> int:
     package_p = sub.add_parser("package", help="Package the project via RunUAT.")
     _add_common(package_p, allow_no_bump=True)
     _add_custom_config(package_p)
-    upload_p = sub.add_parser("upload", help="Upload the staged build to Steam.")
+    upload_p = sub.add_parser("upload", help="Upload the staged build to Steam or Epic.")
     _add_common(upload_p)
+    _add_store(upload_p)
     _add_app(upload_p)
     archive_p = sub.add_parser(
         "archive", help="Zip the staged build for non-Steam distribution (e.g. pixel streaming).")
@@ -94,6 +102,7 @@ def main() -> int:
     release_p = sub.add_parser("release", help="bump -> package -> [notarize on mac] -> upload.")
     _add_common(release_p, allow_no_bump=True)
     _add_custom_config(release_p)
+    _add_store(release_p)
     _add_app(release_p)
     ui_p = sub.add_parser("ui", help="Open the PySide6 Control Panel (launched detached).")
     ui_p.add_argument("--dry-run", action="store_true",
@@ -134,7 +143,10 @@ def main() -> int:
                             custom_config=args.custom_config)
 
     elif args.command == "upload":
-        steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app)
+        if args.store == "epic":
+            epic_mod.upload(cfg, args.platform, args.dry_run)
+        else:
+            steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app)
 
     elif args.command == "archive":
         archive_mod.archive(cfg, args.platform, args.dry_run)
@@ -144,20 +156,27 @@ def main() -> int:
 
     elif args.command == "release":
         # A custom ini layer is allowed here — e.g. the Demo layer uploaded to the Demo
-        # app. It leaves no trace in the staged output, so to keep the destination honest
-        # the layer name is tagged into the Steam build description (see steam.upload).
-        # Resolve the target app before spending an hour on a build, so a missing or
-        # ambiguous --app fails up front rather than after packaging.
-        config.select_app(cfg, args.app)
+        # app. It leaves no trace in the staged output, so the layer name is tagged into
+        # the upload's build label (Steam description / Epic BuildVersion).
+        # Resolve the destination BEFORE spending an hour on a build, so a missing app /
+        # missing [epic] fails up front rather than after packaging.
+        if args.store == "epic":
+            epic_mod._require_epic(cfg)
+        else:
+            config.select_app(cfg, args.app)
         if not args.no_bump:
             print(f"Version: {version_mod.bump(cfg)}")
         package_mod.package(cfg, args.platform, build_config, args.dry_run,
                             bootstrap_if_needed=not args.no_bootstrap, clean=args.clean,
                             custom_config=args.custom_config)
-        # macOS builds must be signed + notarized before they leave the machine.
+        # macOS builds must be signed + notarized before they leave the machine — true for
+        # Steam AND Epic (both distribute outside the App Store).
         if args.platform == "mac":
             notarize_mod.notarize(cfg, args.dry_run)
-        steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app,
-                         custom_config=args.custom_config)
+        if args.store == "epic":
+            epic_mod.upload(cfg, args.platform, args.dry_run, custom_config=args.custom_config)
+        else:
+            steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app,
+                             custom_config=args.custom_config)
 
     return 0

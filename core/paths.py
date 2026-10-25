@@ -64,6 +64,29 @@ def steamcmd_for_sdk(sdk: Path | None) -> str:
     return "steamcmd"
 
 
+def buildpatchtool_for_sdk(sdk: Path | None) -> str:
+    """Resolve Epic's BuildPatchTool from UETOOL_EPIC_SDK, per host OS.
+
+    The env var points at the extracted BPT download; the binary lives under
+    Engine/Binaries/<host>/ (where the docs tell you to run it from), or at the
+    folder root. Falls back to 'BuildPatchTool' on PATH.
+    """
+    if not sdk:
+        return "BuildPatchTool"
+    sdk = Path(sdk).expanduser()
+    if host_is_windows():
+        rels = ["BuildPatchTool.exe", "Engine/Binaries/Win64/BuildPatchTool.exe"]
+    elif host_is_macos():
+        rels = ["BuildPatchTool", "Engine/Binaries/Mac/BuildPatchTool"]
+    else:
+        rels = ["BuildPatchTool", "Engine/Binaries/Linux/BuildPatchTool"]
+    for rel in rels:
+        candidate = sdk / rel
+        if candidate.exists():
+            return str(candidate)
+    return "BuildPatchTool"
+
+
 def run(args, dry_run: bool = False) -> None:
     """Run an external command, streaming its output. Raises on non-zero exit."""
     printable = subprocess.list2cmdline([str(a) for a in args])
