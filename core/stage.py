@@ -12,6 +12,7 @@ Only the folder is renamed. Info.plist's CFBundleExecutable still names the real
 executable inside Contents/MacOS, and code signatures seal the contents, not the
 folder name, so signing, notarization and stapling are unaffected.
 """
+import plistlib
 from pathlib import Path
 
 from .config import Config
@@ -20,6 +21,23 @@ from .config import Config
 def mac_bundle(cfg: Config) -> Path:
     """Where the staged macOS bundle lives once normalized: <stage>/Mac/<Project>.app."""
     return cfg.stage_dir / cfg.stage_subdirs["mac"] / f"{cfg.uproject.stem}.app"
+
+
+def mac_bundle_executable(cfg: Config) -> str:
+    """The inner Mach-O name (CFBundleExecutable) of the normalized staged .app. UE keeps
+    the config-decorated name inside the bundle even after the folder is renamed, so this
+    is '<Project>-Mac-Shipping' for a Shipping build and '<Project>' for Development. Reads
+    it from Info.plist; falls back to the project name when nothing is staged (e.g. a dry
+    run with no cooked bundle). Callers that need the launch path want
+    <Project>.app/Contents/MacOS/<this>."""
+    info = mac_bundle(cfg) / "Contents" / "Info.plist"
+    try:
+        with info.open("rb") as fh:
+            if exe := plistlib.load(fh).get("CFBundleExecutable"):
+                return str(exe)
+    except (OSError, ValueError):  # not staged, or not a readable plist
+        pass
+    return cfg.uproject.stem
 
 
 def normalize_mac_bundle(cfg: Config, dry_run: bool = False) -> Path | None:

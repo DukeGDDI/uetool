@@ -42,12 +42,16 @@ def _read_version(cfg: Config) -> str:
 
 def _app_launch(cfg: Config, target: str) -> str:
     """The executable to launch, relative to BuildRoot. Overridable per platform in
-    [epic]; default derives from the project name. Mac is the inner Mach-O binary inside
-    the .app (not the bundle), as BPT requires."""
+    [epic]. Windows: the undecorated <Project>.exe UAT stages at the root. Mac: the inner
+    Mach-O inside the .app (as BPT requires), whose name is config-decorated
+    (<Project>-Mac-Shipping for Shipping) even though the bundle folder is <Project>.app —
+    so it's read from the staged Info.plist rather than assumed."""
     if explicit := cfg.epic.app_launch.get(target):
         return explicit
     name = cfg.uproject.stem
-    return f"{name}.exe" if target == "win" else f"{name}.app/Contents/MacOS/{name}"
+    if target == "win":
+        return f"{name}.exe"
+    return f"{name}.app/Contents/MacOS/{stage.mac_bundle_executable(cfg)}"
 
 
 def upload(cfg: Config, target: str, dry_run: bool, custom_config: str | None = None) -> None:

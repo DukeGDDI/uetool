@@ -58,6 +58,21 @@ def test_upload_mac_app_launch_is_inner_binary(tmp_path, monkeypatch):
     assert "-BuildVersion=v1.2.0.8-mac" in cmd
 
 
+def test_upload_mac_app_launch_reads_decorated_executable(tmp_path, monkeypatch):
+    # A Shipping bundle's folder is <Project>.app but its inner binary keeps UE's
+    # config-decorated name; AppLaunch must use the real CFBundleExecutable.
+    import plistlib
+    calls = _capture(monkeypatch)
+    monkeypatch.setattr(epic.stage, "normalize_mac_bundle", lambda c, d: None)
+    root = _project(tmp_path, staged=("mac",))
+    contents = root / "Saved/StagedBuilds/Mac/Game.app/Contents"
+    contents.mkdir(parents=True)
+    with (contents / "Info.plist").open("wb") as fh:
+        plistlib.dump({"CFBundleExecutable": "Game-Mac-Shipping"}, fh)
+    epic.upload(config.load(root), "mac", dry_run=True)
+    assert "-AppLaunch=Game.app/Contents/MacOS/Game-Mac-Shipping" in calls["cmd"]
+
+
 def test_custom_config_suffixes_build_version(tmp_path, monkeypatch):
     calls = _capture(monkeypatch)
     epic.upload(config.load(_project(tmp_path)), "win", dry_run=True, custom_config="Demo")

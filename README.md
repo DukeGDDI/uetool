@@ -53,10 +53,17 @@ in the project's `uetool.toml` / `uetool.local.toml` (see [Per-project setup](#p
    export UETOOL_PYTHON=/opt/homebrew/bin/python3.13     # a 3.11+ interpreter
    export UETOOL_STEAM_SDK="$HOME/steamcmd"              # folder containing steamcmd
    export UETOOL_APPLE_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx  # macOS notarization only
+   # Epic Games Store (optional, only if you publish there — see "Epic Games Store" below):
+   export UETOOL_EPIC_SDK="$HOME/BuildPatchTool"         # folder you extracted BuildPatchTool to
+   export UETOOL_EPIC_CLIENT_SECRET=xxxxxxxx             # BPT Client Secret (Dev Portal)
    ```
-5. **One-time Steam login** to cache the Steam Guard sentry — see
+5. **BuildPatchTool (optional, for Epic)** — download it from the Dev Portal
+   (*Epic Games Store → Artifacts and Binaries → Download build patch tool*), extract it,
+   and point `UETOOL_EPIC_SDK` at that folder (uetool finds the binary under its
+   `Engine/Binaries/<host>/`).
+6. **One-time Steam login** to cache the Steam Guard sentry — see
    [Steam login](#steam-login-one-time-per-machine).
-6. **macOS signing (for `notarize`):** you need a *Developer ID Application*
+7. **macOS signing (for `notarize`):** you need a *Developer ID Application*
    certificate in your **login keychain** (with Apple's *Developer ID* intermediate),
    and an Apple ID enrolled in the Apple Developer Program. The `apple_id`, `team_id`,
    and `signing_identity` go in the project's `uetool.local.toml`; the app-specific
@@ -81,10 +88,17 @@ Open a new terminal so the changes take effect.
    ```
    setx UETOOL_PYTHON python
    setx UETOOL_STEAM_SDK C:\steamcmd
+   :: Epic Games Store (optional — see "Epic Games Store" below):
+   setx UETOOL_EPIC_SDK C:\BuildPatchTool
+   setx UETOOL_EPIC_CLIENT_SECRET xxxxxxxx
    ```
    (Use the full `python.exe` path if `python` isn't already on `PATH`. The macOS
    Apple vars don't apply on Windows.)
-5. **One-time Steam login** to cache the Steam Guard sentry — see
+5. **BuildPatchTool (optional, for Epic)** — download it from the Dev Portal
+   (*Epic Games Store → Artifacts and Binaries → Download build patch tool*), extract to
+   e.g. `C:\BuildPatchTool`, and point `UETOOL_EPIC_SDK` at it (uetool finds the binary
+   under its `Engine\Binaries\Win64\`).
+6. **One-time Steam login** to cache the Steam Guard sentry — see
    [Steam login](#steam-login-one-time-per-machine).
 
 > **Important (Windows):** the steamcmd folder goes in **two** places —
