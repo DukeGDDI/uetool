@@ -72,6 +72,28 @@ def test_problems_per_app(project):
     assert cfg.problems()["demo_app_id"][0] == "error" and not cfg.can_save()
 
 
+def test_epic_fields_configured_and_saved(project):
+    cfg = ProjectConfig(project)
+    assert not cfg.configured_epic()
+    for name, val in (("epic_org_id", "o-x"), ("epic_product_id", "p"),
+                      ("epic_artifact_id", "a"), ("epic_client_id", "c")):
+        cfg.set(name, val)
+    assert cfg.configured_epic()
+    cfg.save()
+    assert tomllib.loads((project / BASE).read_text())["epic"] == {
+        "org_id": "o-x", "product_id": "p", "artifact_id": "a", "client_id": "c"}
+    assert ProjectConfig(project).configured_epic()   # persists across reload
+
+
+def test_epic_partial_config_warns(project):
+    cfg = ProjectConfig(project)
+    cfg.set("epic_org_id", "o-x")                       # only one of four set
+    p = cfg.problems()
+    assert p["epic_product_id"][0] == "warn" and p["epic_artifact_id"][0] == "warn"
+    assert "epic_org_id" not in p and cfg.can_save()    # the set one isn't flagged; warns don't block
+    assert not cfg.configured_epic()
+
+
 def test_local_file_seeded_from_example_keeps_its_comments(project):
     cfg = ProjectConfig(project)
     cfg.set("steam_user", "builder")

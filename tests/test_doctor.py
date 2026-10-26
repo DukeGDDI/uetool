@@ -5,11 +5,27 @@ from ui import doctor as d
 from ui.configstore import LOCAL, ProjectConfig
 
 
-def run(project, sdk="", host="mac", home=None, environ=None, engines=(), secrets_=(), py=(3, 13, 1)):
+def run(project, sdk="", epic_sdk="", host="mac", home=None, environ=None, engines=(),
+        secrets_=(), py=(3, 13, 1)):
     cfg = ProjectConfig(project)
     return {r.key: r for r in d.run_checks(
-        project, cfg, sdk, host=host, home=home or project / "home", environ=environ or {},
-        py_version=py, engines=list(engines), has_secret=lambda k, a: (k, a) in secrets_)}
+        project, cfg, sdk, epic_sdk=epic_sdk, host=host, home=home or project / "home",
+        environ=environ or {}, py_version=py, engines=list(engines),
+        has_secret=lambda k, a: (k, a) in secrets_)}
+
+
+def epic_toml(project, **override):
+    ids = {"org_id": "o-x", "product_id": "p", "artifact_id": "a", "client_id": "c", **override}
+    body = "[epic]\n" + "".join(f'{k} = "{v}"\n' for k, v in ids.items() if v)
+    p = project / "uetool.toml"
+    p.write_text(p.read_text() + "\n" + body)
+
+
+def make_bpt(root: Path) -> Path:
+    sub = root / "Engine" / "Binaries" / ("Win64" if os.name == "nt" else "Mac")
+    sub.mkdir(parents=True)
+    (sub / ("BuildPatchTool.exe" if os.name == "nt" else "BuildPatchTool")).write_text("")
+    return root
 
 
 def make_engine(root: Path) -> Path:
@@ -120,6 +136,52 @@ def test_apple_only_on_mac(project):
     (project / LOCAL).write_text('[apple]\napple_id = "a@b.c"\nteam_id = "T"\nsigning_identity = "Dev ID"\n')
     assert run(project, host="mac")["apple"].status == d.FIX            # no password yet
     assert run(project, host="mac", secrets_={("apple", "a@b.c")})["apple"].status == d.PASS
+
+
+def test_epic_na_when_unconfigured(project):
+    assert run(project)["epic"].status == d.NA
+
+
+def test_epic_incomplete_is_fix(project):
+    epic_toml(project, artifact_id="", client_id="")      # only org + product
+    r = run(project)["epic"]
+    assert r.status == d.FIX and "missing" in r.detail and r.action.kind == "open_config"
+
+
+def test_epic_pass_with_bpt_and_secret(project, tmp_path, monkeypatch):
+    monkeypatch.setattr(d.shutil, "which", lambda c: None)
+    epic_toml(project)
+    sdk = make_bpt(tmp_path / "bpt")
+    r = run(project, epic_sdk=str(sdk), secrets_={("epic", "c")})["epic"]
+    assert r.status == d.PASS and "artifact a" in r.detail
+
+
+def test_epic_secret_from_env_passes(project, tmp_path, monkeypatch):
+    monkeypatch.setattr(d.shutil, "which", lambda c: None)
+    epic_toml(project)
+    sdk = make_bpt(tmp_path / "bpt")
+    assert run(project, epic_sdk=str(sdk),
+               environ={"UETOOL_EPIC_CLIENT_SECRET": "s"})["epic"].status == d.PASS
+
+
+def test_epic_fix_when_secret_missing(project, tmp_path, monkeypatch):
+    monkeypatch.setattr(d.shutil, "which", lambda c: None)
+    epic_toml(project)
+    sdk = make_bpt(tmp_path / "bpt")
+    r = run(project, epic_sdk=str(sdk))["epic"]            # bpt found, no secret
+    assert r.status == d.FIX and "secret" in r.detail and r.action.kind == "open_config"
+
+
+def test_epic_fix_locate_bpt_when_missing(project, monkeypatch):
+    monkeypatch.setattr(d.shutil, "which", lambda c: None)  # BuildPatchTool not on PATH
+    epic_toml(project)
+    r = run(project, secrets_={("epic", "c")})["epic"]      # secret present, bpt missing
+    assert r.status == d.FIX and r.action.kind == "pick_epic_sdk"
+
+
+def test_export_lines_include_epic():
+    assert d.export_lines("/s", "mac", "/e") == (
+        'export UETOOL_STEAM_SDK="/s"\nexport UETOOL_EPIC_SDK="/e"')
 
 
 def test_stamped_ini(project):

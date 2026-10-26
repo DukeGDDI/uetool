@@ -38,11 +38,19 @@ def steam_field(app: str, key: str) -> str:
     return f"{app}_{key}"
 
 
+# Epic ids live in the committed [epic] table; non-secret, and text (not numeric like
+# Steam ids). Field name -> key under [epic].
+EPIC_KEYS = {"epic_org_id": "org_id", "epic_product_id": "product_id",
+             "epic_artifact_id": "artifact_id", "epic_client_id": "client_id"}
+EPIC_IDS = tuple(EPIC_KEYS)
+
+
 FIELDS: dict[str, Field] = {f.name: f for f in [
     Field("build_config", BASE, "project", "build_config"),
     Field("stage_dir", BASE, "project", "stage_dir", "path"),
     *[Field(steam_field(app, key), BASE, f"steam.{app}", key, "id")
       for app in STEAM_APPS for key in ("app_id", "depot_win_id", "depot_mac_id")],
+    *[Field(name, BASE, "epic", key) for name, key in EPIC_KEYS.items()],
     Field("ue_root", LOCAL, "engine", "ue_root", "path"),
     Field("steam_user", LOCAL, "steam", "user"),
     Field("apple_id", LOCAL, "apple", "apple_id"),
@@ -142,10 +150,8 @@ class ProjectConfig:
 
     def configured_epic(self) -> bool:
         """True when [epic] has all the ids BuildPatchTool needs (org / product / artifact /
-        client). The secret is env-only and not checked here."""
-        merged = {**_lookup(self._data[BASE], "epic"), **_lookup(self._data[LOCAL], "epic")}
-        return all(str(merged.get(k, "")).strip()
-                   for k in ("org_id", "product_id", "artifact_id", "client_id"))
+        client), pending edits included. The secret is env-only and not checked here."""
+        return all(self.get(name).strip() for name in EPIC_IDS)
 
     # -- validation --------------------------------------------------------
     def problems(self) -> dict[str, tuple[str, str]]:
@@ -165,6 +171,12 @@ class ProjectConfig:
                 out[app_f] = ("warn", "Depot ids are set but the app id is still a placeholder.")
         if not apps and "main_app_id" not in out:
             out["main_app_id"] = ("warn", "No Steam app configured yet: fill in at least one app.")
+        # Epic: all four ids, or none. Partial config can't upload.
+        epic_vals = {k: self.get(k).strip() for k in EPIC_IDS}
+        if 0 < sum(bool(v) for v in epic_vals.values()) < len(EPIC_IDS):
+            for k, v in epic_vals.items():
+                if not v:
+                    out[k] = ("warn", "Fill in all four Epic ids (or clear them all).")
         if not self.get("stage_dir").strip():
             out["stage_dir"] = ("error", "Stage directory can't be empty.")
         if not self.get("build_config").strip():

@@ -64,7 +64,8 @@ class SetupTab(QWidget):
             self.rows.addStretch()
             self.summary.setText("")
             return
-        self.results = doctor.run_checks(self.ctx.project, self.ctx.cfg, self.ctx.steam_sdk, host=self.ctx.host)
+        self.results = doctor.run_checks(self.ctx.project, self.ctx.cfg, self.ctx.steam_sdk,
+                                         epic_sdk=self.ctx.epic_sdk, host=self.ctx.host)
         self.summary.setText("· " + doctor.summary(self.results))
         for r in self.results:
             self.rows.addWidget(hline())
@@ -98,6 +99,11 @@ class SetupTab(QWidget):
                                                  ctx.steam_sdk or str(self.ctx.project))
             if d:
                 ctx.steam_sdk = d
+        elif a.kind == "pick_epic_sdk":
+            d = QFileDialog.getExistingDirectory(self, "Folder containing BuildPatchTool",
+                                                 ctx.epic_sdk or str(self.ctx.project))
+            if d:
+                ctx.epic_sdk = d
         elif a.kind == "steam_login":
             self.open_login(a.data["command"])
         elif a.kind == "restore_version":
@@ -120,7 +126,7 @@ class SetupTab(QWidget):
                                     f"No terminal launcher for this OS. Command copied:\n\n{line}")
 
     def copy_exports(self):
-        text = doctor.export_lines(self.ctx.steam_sdk, self.ctx.host)
+        text = doctor.export_lines(self.ctx.steam_sdk, self.ctx.host, self.ctx.epic_sdk)
         if not text:
             QMessageBox.information(self, "Export lines", "Nothing to export yet: locate steamcmd first.")
             return

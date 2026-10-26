@@ -91,6 +91,19 @@ class ConfigTab(QWidget):
             fa.addRow(muted(f"Leave empty if this project has no {app} app."))
             outer.addWidget(box)
 
+        # Epic Games Store: committed non-secret ids + a keychain secret.
+        epic = QGroupBox(f"Epic Games Store — {BASE}")
+        fe = QFormLayout(epic)
+        self._add(fe, "epic_org_id", "Organization id")
+        self._add(fe, "epic_product_id", "Product id")
+        self._add(fe, "epic_artifact_id", "Artifact id")
+        self._add(fe, "epic_client_id", "BPT Client id")
+        self.epic_pw = SecretRow("epic", ctx, lambda: self.value("epic_client_id"))
+        fe.addRow("BPT Client Secret", self.epic_pw)
+        fe.addRow(muted("Leave empty if this project has no Epic target. The secret is never "
+                        "written here; BuildPatchTool is located via the Epic SDK folder below."))
+        outer.addWidget(epic)
+
         local = QGroupBox(f"{LOCAL} (this machine only)")
         f2 = QFormLayout(local)
         self._add(f2, "ue_root", "Unreal Engine root", browse=True)
@@ -117,6 +130,15 @@ class ConfigTab(QWidget):
         row.addWidget(self.sdk, 1)
         row.addWidget(b)
         f4.addRow("Steam SDK folder", row)
+        erow = QHBoxLayout()
+        self.esdk = QLineEdit()
+        self.esdk.setPlaceholderText("UETOOL_EPIC_SDK: folder containing BuildPatchTool")
+        self.esdk.editingFinished.connect(lambda: self._set_epic_sdk(self.esdk.text()))
+        eb = QPushButton("Browse…")
+        eb.clicked.connect(self._browse_epic_sdk)
+        erow.addWidget(self.esdk, 1)
+        erow.addWidget(eb)
+        f4.addRow("Epic SDK folder", erow)
         outer.addWidget(machine)
 
         btns = QHBoxLayout()
@@ -189,6 +211,7 @@ class ConfigTab(QWidget):
             else:
                 w.setText(v)
         self.sdk.setText(self.ctx.steam_sdk)
+        self.esdk.setText(self.ctx.epic_sdk)
         self._loading = False
         self.update_state()
 
@@ -226,7 +249,8 @@ class ConfigTab(QWidget):
         self.apple_note.setVisible(not mac)
         self.steam_pw.setEnabled(enabled)
         self.apple_pw.setEnabled(enabled and mac)
-        for row in (self.steam_pw, self.apple_pw):
+        self.epic_pw.setEnabled(enabled)
+        for row in (self.steam_pw, self.apple_pw, self.epic_pw):
             row.update_state()
         dirty = bool(cfg and cfg.dirty)
         self.save_btn.setEnabled(enabled and dirty and cfg.can_save())
@@ -267,6 +291,17 @@ class ConfigTab(QWidget):
     def _set_sdk(self, text: str):
         if text.strip() != self.ctx.steam_sdk:
             self.ctx.steam_sdk = text
+
+    def _browse_epic_sdk(self):
+        d = QFileDialog.getExistingDirectory(self, "Folder containing BuildPatchTool",
+                                             self.ctx.epic_sdk or str(self.ctx.project))
+        if d:
+            self.esdk.setText(d)
+            self._set_epic_sdk(d)
+
+    def _set_epic_sdk(self, text: str):
+        if text.strip() != self.ctx.epic_sdk:
+            self.ctx.epic_sdk = text
 
     def _focus(self, tab: str, field: str):
         if tab == "Config" and field in self.edits:

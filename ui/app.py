@@ -79,7 +79,8 @@ class MainWindow(QMainWindow):
         if not self.ctx.project:
             self.ready.setText("")
             return
-        results = doctor.run_checks(self.ctx.project, self.ctx.cfg, self.ctx.steam_sdk, host=self.ctx.host)
+        results = doctor.run_checks(self.ctx.project, self.ctx.cfg, self.ctx.steam_sdk,
+                                    epic_sdk=self.ctx.epic_sdk, host=self.ctx.host)
         ok = doctor.summary(results) == "ready"
         self.ready.setText("Ready" if ok else "Needs setup")
         set_role(self.ready, "badge-pass" if ok else "badge-fix")

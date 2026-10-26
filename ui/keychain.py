@@ -45,11 +45,13 @@ def delete(kind: str, account: str) -> None:
         pass
 
 
-def env_for(steam_user: str, apple_id: str) -> dict[str, str]:
+def env_for(steam_user: str, apple_id: str, epic_client: str = "") -> dict[str, str]:
     """Env vars carrying whichever secrets exist for the configured accounts."""
     env = {}
     if (pw := get("steam", steam_user)):
         env["UETOOL_STEAM_PASSWORD"] = pw
     if (pw := get("apple", apple_id)):
         env["UETOOL_APPLE_APP_PASSWORD"] = pw
+    if (pw := get("epic", epic_client)):
+        env["UETOOL_EPIC_CLIENT_SECRET"] = pw
     return env

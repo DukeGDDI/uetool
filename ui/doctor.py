@@ -12,10 +12,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.paths import host_platform, runuat_path, steamcmd_for_sdk
+from core.paths import buildpatchtool_for_sdk, host_platform, runuat_path, steamcmd_for_sdk
 
 from . import keychain, projectstate
-from .configstore import ProjectConfig, steam_field
+from .configstore import EPIC_IDS, EPIC_KEYS, ProjectConfig, steam_field
 
 PASS, FIX, FAIL, NA = "pass", "fix", "fail", "na"
 
@@ -69,20 +69,25 @@ def steamcmd_path(sdk: str) -> tuple[str, bool]:
     return resolved, found
 
 
-def export_lines(steam_sdk: str, host: str | None = None) -> str:
+def buildpatchtool_path(sdk: str) -> tuple[str, bool]:
+    """(resolved BuildPatchTool, found), the same way core.config resolves it."""
+    resolved = buildpatchtool_for_sdk(Path(sdk)) if sdk else "BuildPatchTool"
+    found = Path(resolved).is_file() if os.path.isabs(resolved) else shutil.which(resolved) is not None
+    return resolved, found
+
+
+def export_lines(steam_sdk: str, host: str | None = None, epic_sdk: str = "") -> str:
     """Copy-paste shell lines that make the CLI behave like the UI does."""
     host = host or host_platform()
     lines = []
-    if steam_sdk:
-        if host == "win":
-            lines.append(f'setx UETOOL_STEAM_SDK "{steam_sdk}"')
-        else:
-            lines.append(f'export UETOOL_STEAM_SDK="{steam_sdk}"')
+    for var, val in (("UETOOL_STEAM_SDK", steam_sdk), ("UETOOL_EPIC_SDK", epic_sdk)):
+        if val:
+            lines.append(f'setx {var} "{val}"' if host == "win" else f'export {var}="{val}"')
     return "\n".join(lines)
 
 
 def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
-               host: str | None = None, home: Path | None = None, environ=None,
+               epic_sdk: str = "", host: str | None = None, home: Path | None = None, environ=None,
                py_version: tuple | None = None, engines=None, has_secret=None) -> list[CheckResult]:
     project = Path(project)
     host = host or host_platform()
@@ -207,6 +212,33 @@ def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
                 Action("open_config", "Open Config"))
         else:
             add("apple", "Apple notarization", PASS, f"{apple_id}, password in keychain")
+
+    # 9. Epic Games Store (optional — only when the project declares an [epic] target)
+    epic_vals = {name: cfg.get(name).strip() for name in EPIC_IDS}
+    set_n = sum(bool(v) for v in epic_vals.values())
+    if set_n == 0:
+        add("epic", "Epic Games Store", NA, "No [epic] target configured (optional).")
+    elif set_n < len(EPIC_IDS):
+        miss = [EPIC_KEYS[name] for name, v in epic_vals.items() if not v]
+        add("epic", "Epic Games Store", FIX, f"Incomplete [epic]: missing {', '.join(miss)}.",
+            Action("open_config", "Open Config"))
+    else:
+        bpt, bpt_found = buildpatchtool_path(epic_sdk or environ.get("UETOOL_EPIC_SDK", ""))
+        has_bpt_secret = (bool(environ.get("UETOOL_EPIC_CLIENT_SECRET"))
+                          or has_secret("epic", epic_vals["epic_client_id"]))
+        gaps = []
+        if not bpt_found:
+            gaps.append("BuildPatchTool not found")
+        if not has_bpt_secret:
+            gaps.append("BPT client secret not set")
+        if gaps:
+            add("epic", "Epic Games Store", FIX,
+                "; ".join(gaps) + " (UETOOL_EPIC_SDK / UETOOL_EPIC_CLIENT_SECRET, or the UI fields).",
+                Action("pick_epic_sdk", "Locate BPT…") if not bpt_found else Action("open_config", "Open Config"))
+        else:
+            where = bpt if os.path.isabs(bpt) else f"{bpt} (on PATH)"
+            add("epic", "Epic Games Store", PASS,
+                f"artifact {epic_vals['epic_artifact_id']}; BPT {where}; secret set")
 
     # 9. Stamped DefaultGame.ini / leftover overlay
     stamped = projectstate.stamped_version(project)
