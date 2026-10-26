@@ -140,6 +140,13 @@ class ProjectConfig:
         return any(k in self._data[which].get("steam", {})
                    for which in (BASE, LOCAL) for k in LEGACY_STEAM_KEYS)
 
+    def configured_epic(self) -> bool:
+        """True when [epic] has all the ids BuildPatchTool needs (org / product / artifact /
+        client). The secret is env-only and not checked here."""
+        merged = {**_lookup(self._data[BASE], "epic"), **_lookup(self._data[LOCAL], "epic")}
+        return all(str(merged.get(k, "")).strip()
+                   for k in ("org_id", "product_id", "artifact_id", "client_id"))
+
     # -- validation --------------------------------------------------------
     def problems(self) -> dict[str, tuple[str, str]]:
         """{field: (level, message)}; level is 'error' (won't save) or 'warn'."""

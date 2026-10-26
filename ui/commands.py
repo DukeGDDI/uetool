@@ -21,10 +21,10 @@ CAPS: dict[str, frozenset[str]] = {
     "bump": frozenset(_COMMON),
     "bootstrap": frozenset({"dry_run"}),
     "package": frozenset(_BUILD | {"custom_config"}),
-    "upload": frozenset(_COMMON | {"app"}),
+    "upload": frozenset(_COMMON | {"app", "store"}),
     "archive": frozenset({"platform", "dry_run"}),
     "notarize": frozenset(_COMMON),
-    "release": frozenset(_BUILD | {"custom_config", "app"}),
+    "release": frozenset(_BUILD | {"custom_config", "app", "store"}),
 }
 
 ERROR, WARN = "error", "warn"
@@ -41,6 +41,7 @@ class BuildSpec:
     clean: bool = False
     custom_config: str | None = None
     app: str | None = None              # Steam app to upload to: main | demo | playtest
+    store: str = "steam"                # publishing destination: steam | epic
 
 
 @dataclass(frozen=True)
@@ -76,13 +77,14 @@ def for_dry_run(spec: BuildSpec) -> BuildSpec:
 
 
 def validate(spec: BuildSpec, host: str, layers: list[str] | None = None,
-             apps: list[str] | None = None) -> list[Issue]:
+             apps: list[str] | None = None, epic_configured: bool | None = None) -> list[Issue]:
     """Problems that should stop (ERROR) or merely flag (WARN) a run.
 
     host is 'win' or 'mac' (core.paths.host_platform()); layers are the available
     Config/Custom/* names, or None to skip the existence check; apps are the Steam
     apps configured in uetool.toml (configstore.configured_apps()), or None to skip
-    the app check.
+    the app check; epic_configured is whether [epic] has its ids (configstore), or
+    None to skip the Epic check.
     """
     out: list[Issue] = []
     if spec.command not in CAPS:
@@ -90,7 +92,11 @@ def validate(spec: BuildSpec, host: str, layers: list[str] | None = None,
     if spec.platform not in ("win", "mac"):
         out.append(Issue(ERROR, f"Platform must be win or mac, not '{spec.platform}'."))
 
-    if accepts(spec.command, "app") and apps is not None:
+    if accepts(spec.command, "store") and spec.store == "epic":
+        if epic_configured is False:
+            out.append(Issue(ERROR, "No Epic target configured. Add org/product/artifact/client "
+                             "ids under [epic] in uetool.toml."))
+    elif accepts(spec.command, "app") and apps is not None:
         if not apps:
             out.append(Issue(ERROR, "No Steam app configured. Add a main, demo or playtest "
                              "app id on the Config tab."))
@@ -147,6 +153,8 @@ def build_argv(spec: BuildSpec, project: Path | str, *, python: str | None = Non
         argv.append("--clean")
     if accepts(spec.command, "custom_config") and spec.custom_config:
         argv += ["--custom-config", spec.custom_config]
+    if accepts(spec.command, "store") and spec.store and spec.store != "steam":
+        argv += ["--store", spec.store]
     if accepts(spec.command, "app") and spec.app:
         argv += ["--app", spec.app]
     if accepts(spec.command, "dry_run") and spec.dry_run:

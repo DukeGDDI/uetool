@@ -50,7 +50,7 @@ def test_caps_match_cli_parser():
     sub = next(a for a in captured["p"]._actions if isinstance(a, argparse._SubParsersAction))
     flagmap = {"platform": "--platform", "config": "--config", "dry_run": "--dry-run",
                "bump": "--no-bump", "bootstrap": "--no-bootstrap", "clean": "--clean",
-               "custom_config": "--custom-config", "app": "--app"}
+               "custom_config": "--custom-config", "app": "--app", "store": "--store"}
     # `ui` is a CLI-only launcher (opens the Control Panel); the UI form doesn't model it,
     # so it has no CAPS entry. Every other subcommand must match CAPS exactly.
     assert set(sub.choices) - {"ui"} == set(c.CAPS)
@@ -78,6 +78,22 @@ def test_release_custom_config_in_argv():
     # release must now emit --custom-config (CAPS already allows it).
     s = BuildSpec(command="release", platform="win", custom_config="Demo", bump=False, app="demo")
     assert "--custom-config" in argv(s) and "Demo" in argv(s)
+
+
+def test_store_epic_in_argv_steam_omitted():
+    epic = BuildSpec(command="release", platform="win", store="epic", bump=False)
+    assert argv(epic)[4:] == ["release", "--platform", "win", "--no-bump", "--store", "epic"]
+    # steam is the default and is kept out of the command line.
+    steam = BuildSpec(command="upload", platform="win", store="steam", app="main")
+    assert "--store" not in argv(steam)
+
+
+def test_validate_epic_requires_config_and_skips_steam_app():
+    epic = BuildSpec(command="release", platform="win", store="epic", bump=False)
+    assert c.blocking(c.validate(epic, "win", epic_configured=False))        # not set up -> error
+    assert not c.blocking(c.validate(epic, "win", epic_configured=True))     # set up -> fine
+    # with store=epic, an ambiguous/missing Steam app is irrelevant (not checked).
+    assert not c.blocking(c.validate(epic, "win", apps=["main", "demo"], epic_configured=True))
 
 
 def test_validate_steam_app_choice():

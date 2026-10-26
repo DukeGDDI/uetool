@@ -76,6 +76,18 @@ def test_release_allows_custom_config(win):
     assert "--custom-config" in b.preview.text() and "Arcware" in b.preview.text()
 
 
+def test_store_epic_requires_config_and_disables_app(win):
+    b = build(win)
+    b.command.setCurrentText("release")
+    b.store.setCurrentText("epic")
+    # The fake project has no [epic] table, so Epic is blocked with a clear message,
+    # the Steam-app combo is disabled (--app is Steam-only), and the flag is in the preview.
+    assert not b.app.isEnabled()
+    assert "No Epic target configured" in b.issues.text()
+    assert not b.run_btn.isEnabled()
+    assert "--store epic" in b.preview.text()
+
+
 def test_notarize_blocked_off_mac(win):
     win.ctx.host = "win"
     b = build(win)

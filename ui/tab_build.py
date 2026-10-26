@@ -35,13 +35,17 @@ class BuildTab(QWidget):
         self.platform = QComboBox()
         self.platform.addItems(["win", "mac"])
         self.platform.setCurrentText(ctx.host)
+        self.store = QComboBox()
+        self.store.addItems(["steam", "epic"])
+        self.store.setToolTip("Publishing destination for upload / release.")
         self.config = QComboBox()
         self.config.addItems(CONFIGS)
         self.layer = QComboBox()
         self.app = QComboBox()
         self.app.setToolTip("Which of the project's Steam apps receives the upload "
-                            "(upload and release only).")
+                            "(Steam only; upload and release).")
         for i, (label, w) in enumerate([("Command", self.command), ("Platform", self.platform),
+                                        ("Store", self.store),
                                         ("Steam app", self.app),
                                         ("Build configuration", self.config),
                                         ("Custom config layer", self.layer)]):
@@ -108,7 +112,7 @@ class BuildTab(QWidget):
         self.log.setMaximumBlockCount(50_000)
         outer.addWidget(self.log, 1)
 
-        for w in (self.command, self.platform, self.config, self.layer, self.app):
+        for w in (self.command, self.platform, self.store, self.config, self.layer, self.app):
             w.currentIndexChanged.connect(self.refresh)
         for c in (self.bump, self.bootstrap, self.clean):
             c.toggled.connect(self.refresh)
@@ -128,7 +132,11 @@ class BuildTab(QWidget):
             build_config=None if c == DEFAULT_CONFIG else c,
             bump=self.bump.isChecked(), bootstrap=self.bootstrap.isChecked(),
             clean=self.clean.isChecked(), custom_config=None if layer == "none" else layer,
-            app=self.app.currentData())
+            app=self.app.currentData(), store=self.store.currentText())
+
+    def epic_configured(self) -> bool | None:
+        """Whether [epic] is set up, or None when no project is open (skips the check)."""
+        return self.ctx.cfg.configured_epic() if self.ctx.cfg else None
 
     def apps(self) -> list[str] | None:
         """Configured Steam apps, or None when no project is open (skips the check)."""
@@ -172,12 +180,15 @@ class BuildTab(QWidget):
         self.layer.setEnabled(cmd.accepts(c, "custom_config"))
         rel_layer = c == "release" and bool(spec.custom_config)
         self.layer_hint.setText(
-            f"The '{spec.custom_config}' layer is cooked in and tagged in the Steam build "
-            "description, so the destination stays identifiable." if rel_layer else "")
+            f"The '{spec.custom_config}' layer is cooked in and tagged in the build label "
+            "(Steam description / Epic BuildVersion), so the destination stays identifiable."
+            if rel_layer else "")
         self.layer_hint.setVisible(rel_layer)
         self.platform.setEnabled(cmd.accepts(c, "platform"))
+        self.store.setEnabled(cmd.accepts(c, "store"))
         self.config.setEnabled(cmd.accepts(c, "config"))
-        self.app.setEnabled(cmd.accepts(c, "app") and self.app.count() > 0)
+        # --app is Steam-only: disable it when the destination is Epic.
+        self.app.setEnabled(cmd.accepts(c, "app") and spec.store == "steam" and self.app.count() > 0)
         for box, flag in ((self.bump, "bump"), (self.bootstrap, "bootstrap"), (self.clean, "clean")):
             box.setEnabled(cmd.accepts(c, flag))
         self.bump.setText("Bump version" if c != "bump" else "Bump version (always)")
@@ -186,9 +197,11 @@ class BuildTab(QWidget):
         project = self.ctx.project
         self.preview.setText("$ " + cmd.display(spec, project) if project else "")
         layers = cmd.custom_layers(project) if project else None
-        issues = cmd.blocking(cmd.validate(spec, self.ctx.host, layers, self.apps()))
+        epic_ok = self.epic_configured()
+        issues = cmd.blocking(cmd.validate(spec, self.ctx.host, layers, self.apps(), epic_ok))
         # The Dry run button rehearses with the bump off, so judge it on that spec.
-        dry_issues = cmd.blocking(cmd.validate(cmd.for_dry_run(spec), self.ctx.host, layers, self.apps()))
+        dry_issues = cmd.blocking(
+            cmd.validate(cmd.for_dry_run(spec), self.ctx.host, layers, self.apps(), epic_ok))
         # The live (non-dry) run is only blocked by problems unrelated to dry-running.
         shown = issues if not spec.dry_run else dry_issues
         self.issues.setText("\n".join(i.message for i in shown))
@@ -208,7 +221,8 @@ class BuildTab(QWidget):
         ctx, spec = self.ctx, self.spec()
         if dry:
             spec = cmd.for_dry_run(spec)
-        if cmd.blocking(cmd.validate(spec, ctx.host, cmd.custom_layers(ctx.project), self.apps())):
+        if cmd.blocking(cmd.validate(spec, ctx.host, cmd.custom_layers(ctx.project),
+                                     self.apps(), self.epic_configured())):
             return
         if ctx.cfg.dirty and QMessageBox.question(
                 self, "Unsaved config",
@@ -219,15 +233,22 @@ class BuildTab(QWidget):
                 QMessageBox.Cancel) != QMessageBox.Yes:
             return
         if not dry and spec.command in ("upload", "release"):
-            app = spec.app or (self.apps() or [None])[0]
-            app_id = ctx.cfg.get(steam_field(app, "app_id")) if app else "?"
-            layer_note = (f" This build has the '{spec.custom_config}' custom config layer cooked in "
-                          "(tagged in the Steam build description)."
+            layer_note = (f" This build has the '{spec.custom_config}' custom config layer cooked in."
                           if spec.custom_config and spec.command == "release" else "")
-            if QMessageBox.question(
+            if spec.store == "epic":
+                ok = QMessageBox.question(
+                    self, "Upload to Epic",
+                    f"This uploads the {spec.platform} build to the Epic artifact via BuildPatchTool."
+                    f"{layer_note} It won't go live until you assign the platform in the Epic Dev "
+                    "Portal. Continue?")
+            else:
+                app = spec.app or (self.apps() or [None])[0]
+                app_id = ctx.cfg.get(steam_field(app, "app_id")) if app else "?"
+                ok = QMessageBox.question(
                     self, "Upload to Steam",
-                    f"This uploads the {spec.platform} build to the {app or '?'} Steam app ({app_id}).{layer_note} "
-                    "It won't go live until you set it live in Steamworks. Continue?") != QMessageBox.Yes:
+                    f"This uploads the {spec.platform} build to the {app or '?'} Steam app ({app_id})."
+                    f"{layer_note} It won't go live until you set it live in Steamworks. Continue?")
+            if ok != QMessageBox.Yes:
                 return
 
         self.log.clear()
