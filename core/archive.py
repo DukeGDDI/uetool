@@ -1,7 +1,7 @@
 """Zip the staged build into a distributable archive (non-Steam distribution).
 
-For hosts that take a packaged build directly rather than a Steam depot — Arcware
-pixel streaming, itch.io, a plain download. Produces
+For hosts that take a packaged build directly rather than a Steam depot — itch.io, a
+direct download, a key reseller. Produces
 <project>/.uetool/dist/<Project>-<version>-<platform>.zip with the game's
 executable at the archive root (the CONTENTS of the staged folder are zipped, not
 the folder itself), so the host finds the .exe immediately on extract.

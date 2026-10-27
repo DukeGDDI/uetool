@@ -105,7 +105,7 @@ class BuildTab(QWidget):
         self.config = QComboBox()
         self.config.addItems(["Shipping", "Development"])
         self.layer = QComboBox()
-        self.layer.addItems(["none", "Arcware"])
+        self.layer.addItems(["none", "Demo"])
         for i, (label, w) in enumerate([("Command", self.command), ("Platform", self.platform),
                                         ("Build configuration", self.config),
                                         ("Custom config layer", self.layer)]):

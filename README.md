@@ -343,8 +343,8 @@ is already cached), or run `uetool bootstrap` on its own as an explicit CI step.
 
 ### Non-Steam distribution (`archive`)
 
-Some hosts take a packaged build directly instead of a Steam depot — **Arcware pixel
-streaming**, itch.io, a plain download. `uetool archive --platform <win|mac>` zips the
+Some hosts take a packaged build directly instead of a Steam depot — itch.io, a direct
+download, a key reseller. `uetool archive --platform <win|mac>` zips the
 staged build into `.uetool/dist/<Project>-<version>-<platform>.zip`, with the executable
 at the **zip root** (it zips the *contents* of the staged folder), names the file with
 the current version, and prints the path. It streams large `.pak` files (no memory blow-up
@@ -356,17 +356,10 @@ uetool package --platform win     # produce Saved/StagedBuilds/Windows
 uetool archive --platform win     # -> .uetool/dist/<Project>-vX.Y.Z.N-win.zip, ready to upload
 ```
 
-For **Arcware pixel streaming** specifically, the project must have the **Pixel Streaming**
-plugin enabled (UE 5.5+: *Pixel Streaming 2*) so it's compiled into the build — uetool
-packages and zips, but it can't add the plugin. The streaming launch args
-(`-PixelStreamingURL`, `-RenderOffScreen`, …) are supplied by Arcware at runtime, not baked
-into the build.
-
 ### Per-host ini layers (`--custom-config`)
 
-A build for a streaming host usually needs settings that would be *wrong* on a storefront
-— a capped framerate, audio that keeps playing while the window is unfocused, quality
-pinned instead of benchmarked. Put those overrides in
+A build variant — for example the free **Demo** — sometimes needs settings that would be
+*wrong* on the main store build. Put those overrides in
 `<project>/Config/Custom/<Name>/Default*.ini` and pass `--custom-config NAME`; uetool
 merges the layer into the base `Config/Default*.ini` for the duration of the cook and
 restores the originals afterwards, the same borrow-and-restore the version stamp uses.
@@ -388,10 +381,6 @@ a failed or interrupted build still leaves your tracked config clean.
 > merge. uetool does **not** pass `-CustomConfig` to RunUAT.
 
 ```bash
-# streaming build: base ini + Config/Custom/Arcware overrides
-uetool package --platform win --custom-config Arcware
-uetool archive --platform win
-
 # storefront build: base ini only — no flag, nothing to remember
 uetool release --platform win --app main
 

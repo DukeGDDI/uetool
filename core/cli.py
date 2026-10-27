@@ -6,7 +6,7 @@ the UE project at the current directory, or one given with -P/--project:
 
     uetool bump
     uetool package [--platform win|mac] [--config Shipping] [--no-bump]
-                   [--custom-config Arcware]
+                   [--custom-config Demo]
     uetool upload [--store steam|epic|appstore] [--app main|demo|playtest]
     uetool notarize
     uetool release [--store ...] [--app ...] [--custom-config NAME]  # bump -> package -> [notarize] -> upload
@@ -57,9 +57,9 @@ def _add_common(sp, allow_no_bump=False):
 def _add_custom_config(sp):
     sp.add_argument("--custom-config", dest="custom_config", default=None, metavar="NAME",
                     help="Apply the Config/Custom/NAME ini layer for this build, e.g. "
-                         "--custom-config Arcware (pixel streaming) or --custom-config Demo "
-                         "(Steam demo app). On release the layer name is tagged into the Steam "
-                         "build description. Omit for a plain storefront build.")
+                         "--custom-config Demo for the Steam demo build. On release the layer "
+                         "name is tagged into the Steam build description. Omit for a plain "
+                         "storefront build.")
 
 
 def _add_app(sp):
@@ -99,7 +99,7 @@ def main() -> int:
     _add_store(upload_p)
     _add_app(upload_p)
     archive_p = sub.add_parser(
-        "archive", help="Zip the staged build for non-Steam distribution (e.g. pixel streaming).")
+        "archive", help="Zip the staged build for non-Steam distribution (e.g. itch.io, a direct download).")
     archive_p.add_argument("--platform", choices=["win", "mac"], default=host_platform(),
                            help="Which staged build to zip (defaults to the host).")
     archive_p.add_argument("--dry-run", action="store_true",
