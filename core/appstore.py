@@ -30,6 +30,13 @@ _ASC_URL = "https://appstoreconnect.apple.com/apps"
 _KEY_DIRS = ("./private_keys", "~/private_keys", "~/.private_keys", "~/.appstoreconnect/private_keys")
 
 
+def _in_project(cfg: Config, p: str) -> Path:
+    """Resolve a configured path: '~' and absolute paths as-is; a relative path against the
+    project root, so [appstore] paths work regardless of the working directory."""
+    path = Path(p).expanduser()
+    return path if path.is_absolute() else (cfg.project_root / path)
+
+
 def _require_appstore(cfg: Config) -> AppStoreConfig:
     a = cfg.appstore
     if a is None:
@@ -68,7 +75,7 @@ def _entitlements(cfg: Config, a: AppStoreConfig, work: Path, dry_run: bool) -> 
     """The MAS entitlements plist: the configured file, or one generated here (app-sandbox
     + network.client + the application/team identifiers that match the provisioning profile)."""
     if a.entitlements_path:
-        return Path(a.entitlements_path).expanduser()
+        return _in_project(cfg, a.entitlements_path)
     ent = work / "mas.entitlements"
     print(f"$ write {ent}  (app-sandbox + network.client)")
     if not dry_run:
@@ -83,7 +90,7 @@ def _entitlements(cfg: Config, a: AppStoreConfig, work: Path, dry_run: bool) -> 
     return ent
 
 
-def _resolve_api_key(a: AppStoreConfig) -> None:
+def _resolve_api_key(cfg: Config, a: AppStoreConfig) -> None:
     """Make sure altool can find AuthKey_<KEYID>.p8. Never reads the key's bytes.
 
     If it's already in a conventional dir, do nothing. If api_key_path points elsewhere,
@@ -93,13 +100,14 @@ def _resolve_api_key(a: AppStoreConfig) -> None:
     for d in _KEY_DIRS:
         if (Path(d).expanduser() / fname).is_file():
             return
-    if a.api_key_path and Path(a.api_key_path).expanduser().is_file():
+    key = _in_project(cfg, a.api_key_path) if a.api_key_path else None
+    if key and key.is_file():
         dest_dir = Path("~/.appstoreconnect/private_keys").expanduser()
         dest_dir.mkdir(parents=True, exist_ok=True)
         link = dest_dir / fname
-        print(f"$ ln -s {a.api_key_path} {link}")
+        print(f"$ ln -s {key} {link}")
         if not link.exists():
-            link.symlink_to(Path(a.api_key_path).expanduser().resolve())
+            link.symlink_to(key.resolve())
         return
     raise SystemExit(
         f"App Store Connect API key not found. Place {fname} in "
@@ -126,7 +134,7 @@ def upload(cfg: Config, target: str, dry_run: bool, custom_config: str | None = 
     else:
         app = content_root / f"{cfg.uproject.stem}.app"
 
-    profile = Path(a.provision_path).expanduser()
+    profile = _in_project(cfg, a.provision_path)
     work = cfg.work_dir / "appstore"
     ent = _entitlements(cfg, a, work, dry_run)
     if not dry_run:
@@ -135,7 +143,7 @@ def upload(cfg: Config, target: str, dry_run: bool, custom_config: str | None = 
                 f"Provisioning profile not found at {profile} ([appstore] provision_path).")
         if not ent.is_file():
             raise SystemExit(f"Entitlements plist not found at {ent} ([appstore] entitlements_path).")
-        _resolve_api_key(a)
+        _resolve_api_key(cfg, a)
         work.mkdir(parents=True, exist_ok=True)
 
     if custom_config:
