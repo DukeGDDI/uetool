@@ -6,12 +6,17 @@ signed with an **Apple Distribution** identity (NO hardened runtime), packaged i
 to App Store Connect — **no notarytool, no stapler**. macOS-only and mac-target-only.
 
 The sequence (proven end-to-end against App Store Connect's --validate-app, 2026-10-27):
-  1. embed the Mac App Store provisioning profile as Contents/embedded.provisionprofile
-  2. sign inside-out with the Apple Distribution identity + MAS entitlements (no runtime)
-  3. chmod -R a+rX the bundle  — WITHOUT this, altool rejects with error 90255
+  1. stamp CFBundleShortVersionString / CFBundleVersion into Info.plist (before signing, so
+     the edit is sealed) — Unreal's defaults (e.g. 5.7.4 / engine build metadata) don't
+     increase per upload, and App Store Connect needs a strictly increasing CFBundleVersion
+  2. embed the Mac App Store provisioning profile as Contents/embedded.provisionprofile
+  3. xattr -cr the bundle — a profile copied out of ~/Downloads carries com.apple.quarantine,
+     which App Store processing rejects with ITMS-91109; clearing before signing is safe
+  4. sign inside-out with the Apple Distribution identity + MAS entitlements (no runtime)
+  5. chmod -R a+rX the bundle  — WITHOUT this, altool rejects with error 90255
      ("files only readable by root"); mode bits aren't sealed, so this doesn't break the signature
-  4. productbuild --component <app> /Applications --sign "<installer identity>" <pkg>
-  5. xcrun altool --upload-app (or --validate-app) --file <pkg> --type macos --apiKey … --apiIssuer …
+  6. productbuild --component <app> /Applications --sign "<installer identity>" <pkg>
+  7. xcrun altool --upload-app (or --validate-app) --file <pkg> --type macos --apiKey … --apiIssuer …
 
 The App Store Connect API key (.p8) is read by altool from ~/.appstoreconnect/private_keys
 by filename convention (AuthKey_<KEYID>.p8); uetool passes only the non-secret key id +
@@ -116,6 +121,36 @@ def _resolve_api_key(cfg: Config, a: AppStoreConfig) -> None:
     )
 
 
+def _bundle_versions(version: str) -> tuple[str, str]:
+    """(CFBundleShortVersionString, CFBundleVersion) from uetool's 'vMAJOR.MINOR.PATCH.BUILD'.
+
+    Short is the 3-part marketing version (Apple allows at most three integers); build is
+    the monotonic counter, which App Store Connect requires to strictly increase on every
+    upload for a given short version. A plain '.version' with no build component yields '0'."""
+    nums = version.lstrip("v").split(".")
+    short = ".".join(nums[:3]) or "1.0.0"
+    build = nums[3] if len(nums) >= 4 else "0"
+    return short, build
+
+
+def _stamp_info_plist(app: Path, short_version: str, build_version: str, dry_run: bool) -> None:
+    """Write CFBundleShortVersionString / CFBundleVersion into the app's Info.plist, so the
+    App Store build carries uetool's version instead of Unreal's engine defaults. Called before
+    signing (the edit is sealed by the signature); the plist's on-disk format is preserved."""
+    info = app / "Contents" / "Info.plist"
+    print(f"$ stamp {info}  CFBundleShortVersionString={short_version} CFBundleVersion={build_version}")
+    if dry_run:
+        return
+    if not info.is_file():
+        raise SystemExit(f"Info.plist not found at {info}; is this a staged .app?")
+    raw = info.read_bytes()
+    fmt = plistlib.FMT_BINARY if raw[:8] == b"bplist00" else plistlib.FMT_XML
+    data = plistlib.loads(raw)
+    data["CFBundleShortVersionString"] = short_version
+    data["CFBundleVersion"] = build_version
+    info.write_bytes(plistlib.dumps(data, fmt=fmt))
+
+
 def upload(cfg: Config, target: str, dry_run: bool, custom_config: str | None = None,
            validate: bool = False) -> None:
     """Sign the staged macOS build for the App Store, build a signed .pkg, and upload it
@@ -151,25 +186,37 @@ def upload(cfg: Config, target: str, dry_run: bool, custom_config: str | None = 
         # is cooked into the build like any other, but changes nothing in the upload itself.
         print(f"# custom-config layer '{custom_config}' is cooked into the build (not reflected in MAS upload)")
 
-    # 1. Embed the provisioning profile (sealed by the signature, so before signing).
+    # 1. Stamp the App Store version into Info.plist (sealed by the signature, so before
+    #    signing). Without this the bundle keeps Unreal's engine defaults (e.g. 5.7.4 / a
+    #    build-metadata CFBundleVersion), which don't increase per upload — so App Store
+    #    Connect treats a re-upload as a redundant binary.
+    short_version, build_version = _bundle_versions(version)
+    _stamp_info_plist(app, short_version, build_version, dry_run)
+
+    # 2. Embed the provisioning profile (sealed by the signature, so before signing).
     embedded = app / "Contents" / "embedded.provisionprofile"
     run(["cp", str(profile), str(embedded)], dry_run)
 
-    # 2. Sign inside-out: Apple Distribution identity, MAS entitlements on the bundle, NO
+    # 3. Strip extended attributes. A profile copied out of ~/Downloads carries
+    #    com.apple.quarantine, which App Store processing rejects with ITMS-91109. Clearing
+    #    all xattrs here (after the cp, before signing) is safe — the signature is applied next.
+    run(["xattr", "-cr", str(app)], dry_run)
+
+    # 4. Sign inside-out: Apple Distribution identity, MAS entitlements on the bundle, NO
     #    hardened runtime (that's a Developer-ID/notarization concept).
     macsign.sign_inside_out(app, a.app_identity, entitlements=ent, hardened=False,
                             timestamp=False, dry_run=dry_run)
     run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], dry_run)
 
-    # 3. Make every file non-root-readable (altool error 90255). Mode bits aren't sealed.
+    # 5. Make every file non-root-readable (altool error 90255). Mode bits aren't sealed.
     run(["chmod", "-R", "a+rX", str(app)], dry_run)
 
-    # 4. Build the signed installer .pkg with the Installer identity.
+    # 6. Build the signed installer .pkg with the Installer identity.
     pkg = work / f"{cfg.uproject.stem}.pkg"
     run(["productbuild", "--component", str(app), "/Applications",
          "--sign", a.installer_identity, str(pkg)], dry_run)
 
-    # 5. Upload to App Store Connect (or validate). The .p8 is found by convention; only the
+    # 7. Upload to App Store Connect (or validate). The .p8 is found by convention; only the
     #    non-secret key id + issuer id are on the command line.
     verb = "--validate-app" if validate else "--upload-app"
     run(["xcrun", "altool", verb, "--file", str(pkg), "--type", "macos",
@@ -181,7 +228,8 @@ def upload(cfg: Config, target: str, dry_run: bool, custom_config: str | None = 
         if validate:
             print(f"Validated {version} for {a.bundle_id} (App Store Connect rehearsal, NOT uploaded).")
         else:
-            print(f"Uploaded {version} for {a.bundle_id} to App Store Connect.")
+            print(f"Uploaded {version} for {a.bundle_id} to App Store Connect "
+                  f"(version {short_version}, build {build_version}).")
             print("It is NOT submitted for review. Add metadata + screenshots and submit in")
             print(f"App Store Connect:  {_ASC_URL}")
         print(bar)

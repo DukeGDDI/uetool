@@ -79,6 +79,10 @@ def test_upload_sequence(tmp_path, monkeypatch):
     assert cp[1].endswith("D6.provisionprofile")
     assert cp[2].endswith("Game.app/Contents/embedded.provisionprofile")
 
+    # xattr -cr strips com.apple.quarantine (the ITMS-91109 rejection) off the bundle
+    xa = _find(calls, "xattr")[0]
+    assert xa[1] == "-cr" and xa[2].endswith("Game.app")
+
     # the bundle codesign: Apple Distribution identity + MAS entitlements, NO hardened runtime
     bundle_sign = next(c for c in calls if c[0] == "codesign" and "--entitlements" in c)
     assert "Apple Distribution: Me (TEAMID123)" in bundle_sign
@@ -105,9 +109,26 @@ def test_upload_sequence(tmp_path, monkeypatch):
     assert "--apiKey" in alt and "KEYID123" in alt
     assert "--apiIssuer" in alt and "issuer-uuid" in alt
 
-    # order: cp -> sign -> verify -> chmod -> productbuild -> altool
+    # order: cp -> xattr strip -> sign -> verify -> chmod -> productbuild -> altool
     heads = [c[0] for c in calls]
-    assert heads.index("cp") < heads.index("chmod") < heads.index("productbuild") < heads.index("xcrun")
+    assert (heads.index("cp") < heads.index("xattr") < heads.index("chmod")
+            < heads.index("productbuild") < heads.index("xcrun"))
+
+
+def test_bundle_versions_from_uetool_version():
+    # 'vMAJOR.MINOR.PATCH.BUILD' -> short (<=3 ints) + the monotonic build counter.
+    assert appstore._bundle_versions("v3.2.0.83") == ("3.2.0", "83")
+    assert appstore._bundle_versions("v1.2.0.8") == ("1.2.0", "8")
+    assert appstore._bundle_versions("v1.0.0") == ("1.0.0", "0")   # no build component
+
+
+def test_upload_stamps_bundle_version(tmp_path, monkeypatch, capsys):
+    # The App Store build must carry uetool's version, not Unreal's engine defaults, and a
+    # dry run should announce the exact CFBundle values it would stamp (.version is v1.2.0.8).
+    _capture(monkeypatch)
+    appstore.upload(config.load(_project(tmp_path)), "mac", dry_run=True)
+    out = capsys.readouterr().out
+    assert "CFBundleShortVersionString=1.2.0" in out and "CFBundleVersion=8" in out
 
 
 def test_validate_uses_validate_app(tmp_path, monkeypatch):
