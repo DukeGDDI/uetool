@@ -1,12 +1,12 @@
 """State shared by every tab: the open project, its config, machine settings."""
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSettings, Signal
+from PySide6.QtCore import QFileSystemWatcher, QObject, QSettings, Signal
 
 from core.paths import host_platform
 
 from . import keychain
-from .configstore import ProjectConfig
+from .configstore import BASE, LOCAL, ProjectConfig
 
 
 class Context(QObject):
@@ -23,6 +23,10 @@ class Context(QObject):
         self.cfg: ProjectConfig | None = None
         self.running = False
         self.host = host_platform()
+        # Re-read uetool.toml / .local.toml when they change on disk (hand-edited or written
+        # by the CLI), so the toml stays the single source of truth for an open project.
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.fileChanged.connect(self._on_config_file_changed)
 
     # -- project -----------------------------------------------------------
     def open_project(self, path: Path | str) -> bool:
@@ -34,12 +38,34 @@ class Context(QObject):
             return False
         self.project = p.resolve()
         self.cfg = ProjectConfig(self.project)
+        self._watch_config_files()
         self.settings.setValue("last_project", str(self.project))
         self.project_changed.emit()
         return True
 
     def last_project(self) -> str:
         return self.settings.value("last_project", "", str)
+
+    # -- live config reload -------------------------------------------------
+    def _watch_config_files(self) -> None:
+        """Watch the open project's config files (those that exist) and no others."""
+        if self._watcher.files():
+            self._watcher.removePaths(self._watcher.files())
+        if not self.project:
+            return
+        for name in (BASE, LOCAL):
+            fp = self.project / name
+            if fp.is_file():
+                self._watcher.addPath(str(fp))
+
+    def _on_config_file_changed(self, path: str) -> None:
+        # An atomic save (os.replace) swaps the inode, so QFileSystemWatcher drops the
+        # watch; re-add it. Then reload — but never over the user's unsaved edits.
+        if path not in self._watcher.files() and Path(path).is_file():
+            self._watcher.addPath(path)
+        if self.cfg and not self.cfg.dirty:
+            self.cfg.load()
+            self.config_changed.emit()
 
     # -- machine-wide settings (not in any project file) --------------------
     @property

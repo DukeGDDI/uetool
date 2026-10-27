@@ -223,6 +223,21 @@ def test_appstore_pass(project):
     assert run(project, host="mac", home=project / "home")["appstore"].status == d.PASS
 
 
+def test_appstore_pass_with_relative_paths(project):
+    # The committed form: provision/entitlements paths are relative to the project root,
+    # not the UI's cwd. The Setup check must resolve them against the project.
+    cfgdir = project / "Config/Mac"
+    cfgdir.mkdir(parents=True)
+    (cfgdir / "D6.provisionprofile").write_text("x")
+    (cfgdir / "Sandbox.MAS.entitlements").write_text("<plist/>")
+    keydir = project / "home/.appstoreconnect/private_keys"
+    keydir.mkdir(parents=True)
+    (keydir / "AuthKey_K1.p8").write_text("x")
+    appstore_toml(project, provision_path="Config/Mac/D6.provisionprofile",
+                  entitlements_path="Config/Mac/Sandbox.MAS.entitlements")
+    assert run(project, host="mac", home=project / "home")["appstore"].status == d.PASS
+
+
 def test_stamped_ini(project):
     assert run(project)["stamped"].status == d.PASS
     (project / "Config/DefaultGame.ini").write_text("ProjectVersion=v3.1.0.5\n")

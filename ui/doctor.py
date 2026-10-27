@@ -102,6 +102,12 @@ def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
     def add(key, name, status, detail, action=None):
         out.append(CheckResult(key, name, status, detail, action))
 
+    def in_project(p: str) -> Path:
+        """Resolve a configured path the way core.appstore does: '~' and absolute paths
+        as-is, a relative one against the project root (not the UI's cwd)."""
+        path = Path(p).expanduser()
+        return path if path.is_absolute() else (project / path)
+
     # 1. Python
     ver = ".".join(map(str, py_version[:3]))
     if tuple(py_version[:2]) >= (3, 11):
@@ -256,16 +262,16 @@ def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
     else:
         gaps = []
         prof = cfg.get("appstore_provision_path").strip()
-        if prof and not Path(prof).expanduser().is_file():
+        if prof and not in_project(prof).is_file():
             gaps.append("provisioning profile not found")
         ent = cfg.get("appstore_entitlements_path").strip()
-        if ent and not Path(ent).expanduser().is_file():
+        if ent and not in_project(ent).is_file():
             gaps.append("entitlements plist not found")
         key_id = cfg.get("appstore_asc_key_id").strip()
         key_path = cfg.get("appstore_api_key_path").strip() or environ.get("UETOOL_ASC_API_KEY_PATH", "")
         key_dirs = [home / ".appstoreconnect/private_keys", home / ".private_keys", home / "private_keys"]
         found_key = (any((kd / f"AuthKey_{key_id}.p8").is_file() for kd in key_dirs)
-                     or (bool(key_path) and Path(key_path).expanduser().is_file()))
+                     or (bool(key_path) and in_project(key_path).is_file()))
         if not found_key:
             gaps.append(f"AuthKey_{key_id}.p8 not found in ~/.appstoreconnect/private_keys")
         if gaps:

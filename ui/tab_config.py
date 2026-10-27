@@ -1,4 +1,6 @@
 """Config tab: edits uetool.toml / uetool.local.toml, plus keychain secrets."""
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
@@ -300,13 +302,27 @@ class ConfigTab(QWidget):
 
     # -- misc --------------------------------------------------------------
     def _browse(self, name: str, pick_file: bool = False):
-        start = self.value(name) or str(self.ctx.project)
+        cur = self.value(name)
+        if cur and self.ctx.project and not Path(cur).is_absolute():
+            cur = str(self.ctx.project / cur)   # open the dialog where a relative value points
+        start = cur or str(self.ctx.project or Path.home())
         if pick_file:
             d, _ = QFileDialog.getOpenFileName(self, "Choose file", start)
         else:
             d = QFileDialog.getExistingDirectory(self, "Choose folder", start)
         if d:
-            self.edits[name].setText(d)
+            self.edits[name].setText(self._project_relative(d))
+
+    def _project_relative(self, p: str) -> str:
+        """Store a path inside the project relative to it (portable + committable); one outside
+        (an engine root, a .p8 kept elsewhere) stays absolute."""
+        proj = self.ctx.project
+        if not proj:
+            return p
+        try:
+            return Path(p).resolve().relative_to(Path(proj).resolve()).as_posix()
+        except ValueError:
+            return p
 
     def _browse_sdk(self):
         d = QFileDialog.getExistingDirectory(self, "Folder containing steamcmd (or the Steamworks SDK)",
