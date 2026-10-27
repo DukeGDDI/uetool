@@ -51,6 +51,8 @@ depot_win_id = "0000001"
 # Store Connect API key (.p8) is NOT here — altool reads it from ~/.appstoreconnect/private_keys
 # (AuthKey_<asc_key_id>.p8); uetool only passes the key id + issuer id. Publish with
 # `uetool release --platform mac --store appstore` (add --validate to rehearse first).
+# provision_path / entitlements_path resolve relative to the project root, so keep them in a
+# version-controlled dir (e.g. Config/Mac), not a VCS-ignored Build/.
 # [appstore]
 # bundle_id = "com.mygame"
 # app_sku = "mygame"                                   # App Store Connect SKU (your own id)
@@ -58,8 +60,11 @@ depot_win_id = "0000001"
 # team_id = "XXXXXXXXXX"                               # defaults to [apple] team_id if omitted
 # app_identity = "Apple Distribution: Name (XXXXXXXXXX)"
 # installer_identity = "3rd Party Mac Developer Installer: Name (XXXXXXXXXX)"
-# provision_path = "Build/Mac/MyGame_MacAppStore.provisionprofile"
-# entitlements_path = "Build/Mac/Resources/Sandbox.MAS.entitlements"  # optional; generated if unset
+# provision_path = "Config/Mac/MyGame_MacAppStore.provisionprofile"
+# entitlements_path = "Config/Mac/Sandbox.MAS.entitlements"   # optional. Unset -> uetool generates
+#   app-sandbox + network.client + the app/team identifiers. If SET, the file is used verbatim, so it
+#   must include all four: com.apple.security.app-sandbox, com.apple.security.network.client,
+#   com.apple.application-identifier = <team>.<bundle>, com.apple.developer.team-identifier = <team>.
 # asc_key_id = "XXXXXXXXXX"                            # App Store Connect API key id
 # asc_issuer_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 # api_key_path = ""                                    # optional: .p8 elsewhere (symlinked into place)
