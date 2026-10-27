@@ -44,6 +44,21 @@ EPIC_KEYS = {"epic_org_id": "org_id", "epic_product_id": "product_id",
              "epic_artifact_id": "artifact_id", "epic_client_id": "client_id"}
 EPIC_IDS = tuple(EPIC_KEYS)
 
+# Mac App Store fields live in the committed [appstore] table; all non-secret (the .p8 is a
+# file altool reads). Field name -> key under [appstore].
+APPSTORE_KEYS = {
+    "appstore_bundle_id": "bundle_id", "appstore_app_sku": "app_sku",
+    "appstore_app_apple_id": "app_apple_id", "appstore_team_id": "team_id",
+    "appstore_app_identity": "app_identity", "appstore_installer_identity": "installer_identity",
+    "appstore_provision_path": "provision_path", "appstore_entitlements_path": "entitlements_path",
+    "appstore_asc_key_id": "asc_key_id", "appstore_asc_issuer_id": "asc_issuer_id",
+    "appstore_api_key_path": "api_key_path",
+}
+APPSTORE_PATH_FIELDS = {"appstore_provision_path", "appstore_entitlements_path", "appstore_api_key_path"}
+# Required for a usable MAS target (team_id falls back to [apple]; sku/app id/entitlements optional).
+APPSTORE_REQUIRED = ("appstore_bundle_id", "appstore_app_identity", "appstore_installer_identity",
+                     "appstore_provision_path", "appstore_asc_key_id", "appstore_asc_issuer_id")
+
 
 FIELDS: dict[str, Field] = {f.name: f for f in [
     Field("build_config", BASE, "project", "build_config"),
@@ -51,6 +66,8 @@ FIELDS: dict[str, Field] = {f.name: f for f in [
     *[Field(steam_field(app, key), BASE, f"steam.{app}", key, "id")
       for app in STEAM_APPS for key in ("app_id", "depot_win_id", "depot_mac_id")],
     *[Field(name, BASE, "epic", key) for name, key in EPIC_KEYS.items()],
+    *[Field(name, BASE, "appstore", key, "path" if name in APPSTORE_PATH_FIELDS else "text")
+      for name, key in APPSTORE_KEYS.items()],
     Field("ue_root", LOCAL, "engine", "ue_root", "path"),
     Field("steam_user", LOCAL, "steam", "user"),
     Field("apple_id", LOCAL, "apple", "apple_id"),
@@ -153,6 +170,11 @@ class ProjectConfig:
         client), pending edits included. The secret is env-only and not checked here."""
         return all(self.get(name).strip() for name in EPIC_IDS)
 
+    def configured_appstore(self) -> bool:
+        """True when [appstore] has the required MAS fields (bundle id, both signing
+        identities, provisioning profile, ASC key + issuer ids), pending edits included."""
+        return all(self.get(name).strip() for name in APPSTORE_REQUIRED)
+
     # -- validation --------------------------------------------------------
     def problems(self) -> dict[str, tuple[str, str]]:
         """{field: (level, message)}; level is 'error' (won't save) or 'warn'."""
@@ -177,6 +199,12 @@ class ProjectConfig:
             for k, v in epic_vals.items():
                 if not v:
                     out[k] = ("warn", "Fill in all four Epic ids (or clear them all).")
+        # Mac App Store: all required fields, or none.
+        mas_vals = {k: self.get(k).strip() for k in APPSTORE_REQUIRED}
+        if 0 < sum(bool(v) for v in mas_vals.values()) < len(APPSTORE_REQUIRED):
+            for k, v in mas_vals.items():
+                if not v:
+                    out[k] = ("warn", "Fill in all required Mac App Store fields (or clear them all).")
         if not self.get("stage_dir").strip():
             out["stage_dir"] = ("error", "Stage directory can't be empty.")
         if not self.get("build_config").strip():

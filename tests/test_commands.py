@@ -88,6 +88,20 @@ def test_store_epic_in_argv_steam_omitted():
     assert "--store" not in argv(steam)
 
 
+def test_store_appstore_in_argv():
+    s = BuildSpec(command="release", platform="mac", store="appstore", bump=False)
+    assert argv(s)[4:] == ["release", "--platform", "mac", "--no-bump", "--store", "appstore"]
+
+
+def test_validate_appstore_requires_config_and_mac():
+    base = dict(command="release", platform="mac", store="appstore", bump=False)
+    assert c.blocking(c.validate(BuildSpec(**base), "mac", appstore_configured=False))     # not set up
+    assert not c.blocking(c.validate(BuildSpec(**base), "mac", appstore_configured=True))  # set up on mac
+    assert c.blocking(c.validate(BuildSpec(**base), "win", appstore_configured=True))      # non-mac host
+    win = BuildSpec(command="release", platform="win", store="appstore", bump=False)
+    assert c.blocking(c.validate(win, "mac", appstore_configured=True))                    # non-mac target
+
+
 def test_validate_epic_requires_config_and_skips_steam_app():
     epic = BuildSpec(command="release", platform="win", store="epic", bump=False)
     assert c.blocking(c.validate(epic, "win", epic_configured=False))        # not set up -> error

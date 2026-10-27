@@ -184,6 +184,45 @@ def test_export_lines_include_epic():
         'export UETOOL_STEAM_SDK="/s"\nexport UETOOL_EPIC_SDK="/e"')
 
 
+def appstore_toml(project, **override):
+    base = {"bundle_id": "com.x", "app_identity": "AppDist", "installer_identity": "Inst",
+            "provision_path": str(project / "D6.provisionprofile"),
+            "asc_key_id": "K1", "asc_issuer_id": "iss", **override}
+    body = "[appstore]\n" + "".join(f'{k} = "{v}"\n' for k, v in base.items() if v)
+    p = project / "uetool.toml"
+    p.write_text(p.read_text() + "\n" + body)
+
+
+def test_appstore_na_off_mac(project):
+    assert run(project, host="win")["appstore"].status == d.NA
+
+
+def test_appstore_na_when_unconfigured(project):
+    assert run(project, host="mac")["appstore"].status == d.NA
+
+
+def test_appstore_incomplete_is_fix(project):
+    appstore_toml(project, installer_identity="", asc_key_id="")   # only some required fields
+    r = run(project, host="mac")["appstore"]
+    assert r.status == d.FIX and "missing" in r.detail and r.action.kind == "open_config"
+
+
+def test_appstore_fix_when_profile_or_key_missing(project):
+    appstore_toml(project)   # provision_path names a file that doesn't exist; no .p8
+    r = run(project, host="mac")["appstore"]
+    assert r.status == d.FIX
+
+
+def test_appstore_pass(project):
+    prof = project / "D6.provisionprofile"
+    prof.write_text("x")
+    keydir = project / "home/.appstoreconnect/private_keys"
+    keydir.mkdir(parents=True)
+    (keydir / "AuthKey_K1.p8").write_text("x")
+    appstore_toml(project, provision_path=str(prof))
+    assert run(project, host="mac", home=project / "home")["appstore"].status == d.PASS
+
+
 def test_stamped_ini(project):
     assert run(project)["stamped"].status == d.PASS
     (project / "Config/DefaultGame.ini").write_text("ProjectVersion=v3.1.0.5\n")

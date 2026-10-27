@@ -80,3 +80,29 @@ def test_select_app(project):
 def test_is_placeholder():
     assert config.is_placeholder("") and config.is_placeholder(" 0000001 ") and config.is_placeholder(None)
     assert not config.is_placeholder("4852730") and not config.is_placeholder(4852730)
+
+
+def test_appstore_loaded(project):
+    write_toml(project, '''
+[appstore]
+bundle_id = "com.d6scend"
+app_identity = "Apple Distribution: X (T1)"
+installer_identity = "3rd Party Mac Developer Installer: X (T1)"
+provision_path = "/p/D6.provisionprofile"
+asc_key_id = "K1"
+asc_issuer_id = "iss"
+''')
+    a = config.load(project).appstore
+    assert a and a.bundle_id == "com.d6scend" and a.asc_key_id == "K1"
+    assert a.installer_identity.startswith("3rd Party") and a.team_id == ""  # no [apple] team set
+
+
+def test_appstore_absent_is_none(project):
+    write_toml(project, "[project]\n")
+    assert config.load(project).appstore is None
+
+
+def test_appstore_team_falls_back_to_apple(project):
+    write_toml(project, '[appstore]\nbundle_id = "com.x"\napp_identity = "A"\n')
+    (project / "uetool.local.toml").write_text('[apple]\nteam_id = "APPLETEAM"\n')
+    assert config.load(project).appstore.team_id == "APPLETEAM"

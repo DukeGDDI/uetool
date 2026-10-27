@@ -36,8 +36,9 @@ class BuildTab(QWidget):
         self.platform.addItems(["win", "mac"])
         self.platform.setCurrentText(ctx.host)
         self.store = QComboBox()
-        self.store.addItems(["steam", "epic"])
-        self.store.setToolTip("Publishing destination for upload / release.")
+        self.store.addItems(["steam", "epic", "appstore"])
+        self.store.setToolTip("Publishing destination for upload / release "
+                              "(appstore is macOS-only).")
         self.config = QComboBox()
         self.config.addItems(CONFIGS)
         self.layer = QComboBox()
@@ -138,6 +139,10 @@ class BuildTab(QWidget):
         """Whether [epic] is set up, or None when no project is open (skips the check)."""
         return self.ctx.cfg.configured_epic() if self.ctx.cfg else None
 
+    def appstore_configured(self) -> bool | None:
+        """Whether [appstore] is set up, or None when no project is open (skips the check)."""
+        return self.ctx.cfg.configured_appstore() if self.ctx.cfg else None
+
     def apps(self) -> list[str] | None:
         """Configured Steam apps, or None when no project is open (skips the check)."""
         return self.ctx.cfg.configured_apps() if self.ctx.cfg else None
@@ -177,6 +182,13 @@ class BuildTab(QWidget):
     def refresh(self):
         spec = self.spec()
         c = spec.command
+        # Mac App Store is mac-only: force the platform to mac and lock the combo.
+        appstore_sel = cmd.accepts(c, "store") and spec.store == "appstore"
+        if appstore_sel and self.platform.currentText() != "mac":
+            self.platform.blockSignals(True)
+            self.platform.setCurrentText("mac")
+            self.platform.blockSignals(False)
+            spec = self.spec()
         self.layer.setEnabled(cmd.accepts(c, "custom_config"))
         rel_layer = c == "release" and bool(spec.custom_config)
         self.layer_hint.setText(
@@ -184,10 +196,10 @@ class BuildTab(QWidget):
             "(Steam description / Epic BuildVersion), so the destination stays identifiable."
             if rel_layer else "")
         self.layer_hint.setVisible(rel_layer)
-        self.platform.setEnabled(cmd.accepts(c, "platform"))
+        self.platform.setEnabled(cmd.accepts(c, "platform") and not appstore_sel)
         self.store.setEnabled(cmd.accepts(c, "store"))
         self.config.setEnabled(cmd.accepts(c, "config"))
-        # --app is Steam-only: disable it when the destination is Epic.
+        # --app is Steam-only: disable it when the destination is Epic or the App Store.
         self.app.setEnabled(cmd.accepts(c, "app") and spec.store == "steam" and self.app.count() > 0)
         for box, flag in ((self.bump, "bump"), (self.bootstrap, "bootstrap"), (self.clean, "clean")):
             box.setEnabled(cmd.accepts(c, flag))
@@ -198,10 +210,11 @@ class BuildTab(QWidget):
         self.preview.setText("$ " + cmd.display(spec, project) if project else "")
         layers = cmd.custom_layers(project) if project else None
         epic_ok = self.epic_configured()
-        issues = cmd.blocking(cmd.validate(spec, self.ctx.host, layers, self.apps(), epic_ok))
+        mas_ok = self.appstore_configured()
+        issues = cmd.blocking(cmd.validate(spec, self.ctx.host, layers, self.apps(), epic_ok, mas_ok))
         # The Dry run button rehearses with the bump off, so judge it on that spec.
         dry_issues = cmd.blocking(
-            cmd.validate(cmd.for_dry_run(spec), self.ctx.host, layers, self.apps(), epic_ok))
+            cmd.validate(cmd.for_dry_run(spec), self.ctx.host, layers, self.apps(), epic_ok, mas_ok))
         # The live (non-dry) run is only blocked by problems unrelated to dry-running.
         shown = issues if not spec.dry_run else dry_issues
         self.issues.setText("\n".join(i.message for i in shown))
@@ -222,7 +235,7 @@ class BuildTab(QWidget):
         if dry:
             spec = cmd.for_dry_run(spec)
         if cmd.blocking(cmd.validate(spec, ctx.host, cmd.custom_layers(ctx.project),
-                                     self.apps(), self.epic_configured())):
+                                     self.apps(), self.epic_configured(), self.appstore_configured())):
             return
         if ctx.cfg.dirty and QMessageBox.question(
                 self, "Unsaved config",
@@ -241,6 +254,12 @@ class BuildTab(QWidget):
                     f"This uploads the {spec.platform} build to the Epic artifact via BuildPatchTool."
                     f"{layer_note} It won't go live until you assign the platform in the Epic Dev "
                     "Portal. Continue?")
+            elif spec.store == "appstore":
+                ok = QMessageBox.question(
+                    self, "Upload to App Store Connect",
+                    "This signs a Mac App Store build, builds a signed .pkg and uploads it to "
+                    "App Store Connect. It won't be submitted for review until you do that in "
+                    "App Store Connect. Continue?")
             else:
                 app = spec.app or (self.apps() or [None])[0]
                 app_id = ctx.cfg.get(steam_field(app, "app_id")) if app else "?"

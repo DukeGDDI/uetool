@@ -7,9 +7,10 @@ the UE project at the current directory, or one given with -P/--project:
     uetool bump
     uetool package [--platform win|mac] [--config Shipping] [--no-bump]
                    [--custom-config Arcware]
-    uetool upload [--store steam|epic] [--app main|demo|playtest]
+    uetool upload [--store steam|epic|appstore] [--app main|demo|playtest]
     uetool notarize
-    uetool release [--app ...] [--custom-config NAME]   # bump -> package -> [notarize] -> upload
+    uetool release [--store ...] [--app ...] [--custom-config NAME]  # bump -> package -> [notarize] -> upload
+    uetool release --platform mac --store appstore [--validate]  # Mac App Store (macOS only)
     uetool ui                            # open the PySide6 Control Panel (detached)
     uetool -P /path/to/Project release --platform mac --app playtest
 
@@ -28,6 +29,7 @@ from . import (
     package as package_mod,
     steam as steam_mod,
     epic as epic_mod,
+    appstore as appstore_mod,
     notarize as notarize_mod,
     archive as archive_mod,
 )
@@ -68,9 +70,13 @@ def _add_app(sp):
 
 
 def _add_store(sp):
-    sp.add_argument("--store", choices=["steam", "epic"], default="steam",
+    sp.add_argument("--store", choices=["steam", "epic", "appstore"], default="steam",
                     help="Publishing destination (default: steam). epic uploads the staged "
-                         "build to the [epic] artifact via BuildPatchTool.")
+                         "build to the [epic] artifact via BuildPatchTool; appstore signs a "
+                         "Mac App Store build and uploads it to App Store Connect (macOS only).")
+    sp.add_argument("--validate", action="store_true",
+                    help="appstore only: rehearse the upload with altool --validate-app "
+                         "(checks signature/credentials) instead of actually submitting.")
 
 
 def main() -> int:
@@ -145,6 +151,8 @@ def main() -> int:
     elif args.command == "upload":
         if args.store == "epic":
             epic_mod.upload(cfg, args.platform, args.dry_run)
+        elif args.store == "appstore":
+            appstore_mod.upload(cfg, args.platform, args.dry_run, validate=args.validate)
         else:
             steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app)
 
@@ -162,6 +170,9 @@ def main() -> int:
         # missing [epic] fails up front rather than after packaging.
         if args.store == "epic":
             epic_mod._require_epic(cfg)
+        elif args.store == "appstore":
+            appstore_mod._require_appstore(cfg)
+            appstore_mod._ensure_mac(args.platform)   # macOS host + mac target only
         else:
             config.select_app(cfg, args.app)
         if not args.no_bump:
@@ -169,12 +180,16 @@ def main() -> int:
         package_mod.package(cfg, args.platform, build_config, args.dry_run,
                             bootstrap_if_needed=not args.no_bootstrap, clean=args.clean,
                             custom_config=args.custom_config)
-        # macOS builds must be signed + notarized before they leave the machine — true for
-        # Steam AND Epic (both distribute outside the App Store).
-        if args.platform == "mac":
+        # macOS builds must be signed + notarized before they leave the machine — but NOT
+        # for the App Store, which is sandbox-signed (Apple Distribution), not Developer-ID
+        # notarized. Steam and Epic (both distribute outside the App Store) do notarize.
+        if args.platform == "mac" and args.store != "appstore":
             notarize_mod.notarize(cfg, args.dry_run)
         if args.store == "epic":
             epic_mod.upload(cfg, args.platform, args.dry_run, custom_config=args.custom_config)
+        elif args.store == "appstore":
+            appstore_mod.upload(cfg, args.platform, args.dry_run,
+                                custom_config=args.custom_config, validate=args.validate)
         else:
             steam_mod.upload(cfg, args.platform, args.dry_run, app=args.app,
                              custom_config=args.custom_config)

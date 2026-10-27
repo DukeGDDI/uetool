@@ -1,10 +1,11 @@
 # uetool
 
 A small, cross-platform CLI that **bumps**, **packages**, **signs/notarizes**, and
-**uploads to Steam** any Unreal Engine project — without living inside the project.
-It is a thin orchestration layer: Unreal's `RunUAT` does the cooking/packaging,
-Apple's `codesign`/`notarytool` do macOS signing, and `steamcmd` does the upload.
-`uetool` just wires them together with consistent versioning and config.
+**publishes** any Unreal Engine project — to **Steam**, the **Epic Games Store**, or the
+**Mac App Store** — without living inside the project. It is a thin orchestration layer:
+Unreal's `RunUAT` cooks/packages, Apple's `codesign`/`notarytool`/`altool` do macOS signing,
+and `steamcmd` / Epic's `BuildPatchTool` / App Store Connect do the uploads. `uetool` just
+wires them together with consistent versioning and config.
 
 Install it once, put it on your `PATH`, and point it at any UE project.
 
@@ -162,7 +163,7 @@ there is nothing project-specific to hardcode.
 usage: uetool [-P PATH] {bump,bootstrap,package,upload,notarize,archive,release,ui} ...
               [--platform win|mac] [--config Shipping] [--dry-run]
               [--no-bump] [--no-bootstrap] [--clean] [--custom-config NAME]
-              [--store steam|epic] [--app main|demo|playtest]
+              [--store steam|epic|appstore] [--app main|demo|playtest] [--validate]
 ```
 
 Run from inside the project, or point at it with `-P`:
@@ -177,6 +178,7 @@ uetool upload --platform mac --app playtest      # push the staged build to the 
 uetool archive --platform win            # zip the staged build for non-Steam distribution
 uetool release --platform mac --app main # bump -> package -> [notarize on mac] -> upload to the store app
 uetool release --platform win --store epic       # same build, uploaded to Epic via BuildPatchTool
+uetool release --platform mac --store appstore   # Mac App Store: sign + .pkg + App Store Connect
 uetool -P ~/games/MyGame release --platform win --app demo   # operate on a project elsewhere
 ```
 
@@ -256,6 +258,57 @@ Notes specific to Epic:
   publishing). uetool prints the reminder with the portal link.
 - `--app` is Steam-only; Epic has one `[epic]` artifact (multiple artifacts can be added
   later the same way Steam grew multiple apps).
+
+### Mac App Store (`--store appstore`)
+
+**macOS only.** Unlike Steam/Epic (Developer-ID notarized), a Mac App Store build is
+**sandboxed**, signed with an **Apple Distribution** identity, packaged into a **signed
+installer `.pkg`**, and uploaded to **App Store Connect** — **no notarytool, no stapler**.
+`release --store appstore` runs bump → package → MAS-sign → `productbuild` → `altool` upload,
+*skipping* the Developer-ID notarize step. It refuses anything but a macOS host and
+`--platform mac`.
+
+```bash
+uetool release --platform mac --store appstore              # sign -> .pkg -> upload
+uetool release --platform mac --store appstore --validate   # rehearse (altool --validate-app, no submit)
+uetool upload  --platform mac --store appstore              # package already staged
+```
+
+The exact signing sequence (each step printed; verified end-to-end against App Store Connect's
+`--validate-app`):
+1. embed the Mac App Store provisioning profile as `Contents/embedded.provisionprofile`;
+2. sign inside-out with the Apple Distribution identity + MAS entitlements (**no** hardened runtime);
+3. **`chmod -R a+rX`** the bundle — without this, altool rejects with error **90255** ("files
+   only readable by root"); mode bits aren't sealed, so this doesn't disturb the signature;
+4. `productbuild --component <app> /Applications --sign "3rd Party Mac Developer Installer: …"`;
+5. `xcrun altool --upload-app --file <pkg> --type macos --apiKey <id> --apiIssuer <id>`.
+
+**Prerequisites** (obtain once; they gate only the first real upload):
+- an **Apple Distribution** cert and a **3rd Party Mac Developer Installer** cert in your
+  login keychain. If a freshly-created cert shows `CSSMERR_TP_NOT_TRUSTED`, install the current
+  **Apple WWDR G3 intermediate** (`curl http://certs.apple.com/wwdrg3.der` → double-click, or
+  `security import`) — new MAS certs chain through it;
+- a **Mac App Store provisioning profile** for your bundle id (`.provisionprofile`);
+- an **App Store Connect API key**: the key id + issuer id go in `[appstore]`; place the
+  secret **`AuthKey_<KEYID>.p8` in `~/.appstoreconnect/private_keys/`** — altool reads it there
+  and **uetool never touches the key** (only the two ids reach the command line). Point
+  `[appstore] api_key_path` / `UETOOL_ASC_API_KEY_PATH` at a `.p8` elsewhere and uetool symlinks
+  it into place (still never reading its bytes);
+- an **App Store Connect app record** for the bundle id (SKU chosen).
+
+Config (`[appstore]` in `uetool.toml`, all non-secret — see `uetool.toml.example`):
+`bundle_id`, `team_id` (defaults to `[apple] team_id`), `app_identity`, `installer_identity`,
+`provision_path`, `entitlements_path` (optional — uetool generates an app-sandbox +
+network.client plist if unset), `asc_key_id`, `asc_issuer_id`, and optional `app_sku` /
+`app_apple_id` / `api_key_path`.
+
+Notes:
+- **Upload ≠ submission.** altool uploads the build; metadata, screenshots and **review** are
+  manual in App Store Connect (uetool prints the link).
+- The MAS build should be a **non-Steam** variant with a `Sandbox.MAS.entitlements` file on the
+  **project** side; uetool's re-sign makes the entitlements authoritative regardless.
+- Alternative uploader: `xcrun iTMSTransporter` (inside Transporter.app) is a manual fallback;
+  altool is the supported CLI path and the only one uetool drives.
 
 ### Stable launch paths (`<Project>.app` / `<Project>.exe`)
 
@@ -428,8 +481,9 @@ uetool/
 ├── uetool            bash launcher (macOS/Linux)
 ├── uetool.cmd        Windows launcher (works in cmd AND PowerShell)
 ├── uetool.py         Python entry (sets sys.path, runs core.cli)
-└── core/             the package (host detection, config, version, package, steam, notarize)
+└── core/             the package (config, version, package, steam, epic, appstore, notarize)
     └── steam/        VDF templates (@TOKEN@ placeholders)
+    └── macsign.py    shared inside-out codesign walk (notarize + appstore)
     └── stage.py      staged-output helpers (macOS bundle rename)
 ```
 
@@ -450,6 +504,12 @@ resolves the project root (`-P`, default cwd) and dispatches to `core`.
   then seals the `.app` last.
 - **macOS builds must be built on a Mac** (Apple toolchain) with a *Developer ID
   Application* certificate in the login keychain plus the *Developer ID* intermediate.
+- **Mac App Store ≠ Developer ID.** A MAS build is **sandboxed** and signed with an *Apple
+  Distribution* identity into a signed `.pkg` — **no** hardened runtime, **no** notarytool,
+  **no** stapler (all of which the Steam/Epic macOS path uses). Two gotchas uetool bakes in:
+  `chmod -R a+rX` before `productbuild` (else altool error 90255), and new MAS certs need the
+  **WWDR G3** intermediate installed or they read as `CSSMERR_TP_NOT_TRUSTED`. See
+  [Mac App Store](#mac-app-store---store-appstore).
 - **Steam depots:** the target depot must be **created and published** under the app
   before an upload to it will succeed (otherwise steamcmd reports *Access Denied*).
 - **TOML backslashes:** in double-quoted strings `\` is an escape — use forward

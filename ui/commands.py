@@ -41,7 +41,7 @@ class BuildSpec:
     clean: bool = False
     custom_config: str | None = None
     app: str | None = None              # Steam app to upload to: main | demo | playtest
-    store: str = "steam"                # publishing destination: steam | epic
+    store: str = "steam"                # publishing destination: steam | epic | appstore
 
 
 @dataclass(frozen=True)
@@ -77,14 +77,15 @@ def for_dry_run(spec: BuildSpec) -> BuildSpec:
 
 
 def validate(spec: BuildSpec, host: str, layers: list[str] | None = None,
-             apps: list[str] | None = None, epic_configured: bool | None = None) -> list[Issue]:
+             apps: list[str] | None = None, epic_configured: bool | None = None,
+             appstore_configured: bool | None = None) -> list[Issue]:
     """Problems that should stop (ERROR) or merely flag (WARN) a run.
 
     host is 'win' or 'mac' (core.paths.host_platform()); layers are the available
     Config/Custom/* names, or None to skip the existence check; apps are the Steam
     apps configured in uetool.toml (configstore.configured_apps()), or None to skip
-    the app check; epic_configured is whether [epic] has its ids (configstore), or
-    None to skip the Epic check.
+    the app check; epic_configured / appstore_configured are whether [epic] / [appstore]
+    are set up (configstore), or None to skip that check.
     """
     out: list[Issue] = []
     if spec.command not in CAPS:
@@ -96,6 +97,14 @@ def validate(spec: BuildSpec, host: str, layers: list[str] | None = None,
         if epic_configured is False:
             out.append(Issue(ERROR, "No Epic target configured. Add org/product/artifact/client "
                              "ids under [epic] in uetool.toml."))
+    elif accepts(spec.command, "store") and spec.store == "appstore":
+        if appstore_configured is False:
+            out.append(Issue(ERROR, "No Mac App Store target configured. Add the [appstore] "
+                             "fields on the Config tab."))
+        if host != "mac":
+            out.append(Issue(ERROR, "Mac App Store publishing needs macOS."))
+        if spec.platform != "mac":
+            out.append(Issue(ERROR, "Mac App Store publishing is mac-only; set platform to mac."))
     elif accepts(spec.command, "app") and apps is not None:
         if not apps:
             out.append(Issue(ERROR, "No Steam app configured. Add a main, demo or playtest "

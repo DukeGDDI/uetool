@@ -104,6 +104,26 @@ class ConfigTab(QWidget):
                         "written here; BuildPatchTool is located via the Epic SDK folder below."))
         outer.addWidget(epic)
 
+        # Mac App Store: committed non-secret ids/paths; the .p8 is a file altool reads (no SecretRow).
+        mas = QGroupBox(f"Mac App Store — {BASE}")
+        fm = QFormLayout(mas)
+        self._add(fm, "appstore_bundle_id", "Bundle id")
+        self._add(fm, "appstore_app_sku", "App SKU")
+        self._add(fm, "appstore_app_apple_id", "App Store app id (adamId)")
+        self._add(fm, "appstore_team_id", "Team id (defaults to Apple team)")
+        self._add(fm, "appstore_app_identity", "App signing identity")
+        self._add(fm, "appstore_installer_identity", "Installer signing identity")
+        self._add(fm, "appstore_provision_path", "Provisioning profile", pick_file=True)
+        self._add(fm, "appstore_entitlements_path", "Entitlements plist (optional)", pick_file=True)
+        self._add(fm, "appstore_asc_key_id", "ASC API key id")
+        self._add(fm, "appstore_asc_issuer_id", "ASC issuer id")
+        self._add(fm, "appstore_api_key_path", ".p8 key path (optional)", pick_file=True)
+        fm.addRow(muted("macOS only. Leave empty if not shipping to the Mac App Store. The App "
+                        "Store Connect key (.p8) is read by Apple's altool from "
+                        "~/.appstoreconnect/private_keys — uetool never reads it."))
+        outer.addWidget(mas)
+        self.mas_box = mas
+
         local = QGroupBox(f"{LOCAL} (this machine only)")
         f2 = QFormLayout(local)
         self._add(f2, "ue_root", "Unreal Engine root", browse=True)
@@ -169,7 +189,8 @@ class ConfigTab(QWidget):
         self.load()
 
     # -- construction helpers ----------------------------------------------
-    def _add(self, form: QFormLayout, name: str, label: str, combo=False, browse=False):
+    def _add(self, form: QFormLayout, name: str, label: str, combo=False, browse=False,
+             pick_file=False):
         if combo:
             w = QComboBox()
             w.setEditable(True)
@@ -184,11 +205,11 @@ class ConfigTab(QWidget):
         self.msgs[name] = msg
         box = QVBoxLayout()
         box.setSpacing(2)
-        if browse:
+        if browse or pick_file:
             r = QHBoxLayout()
             r.addWidget(w, 1)
             b = QPushButton("Browse…")
-            b.clicked.connect(lambda: self._browse(name))
+            b.clicked.connect(lambda *_: self._browse(name, pick_file))
             r.addWidget(b)
             box.addLayout(r)
         else:
@@ -247,6 +268,8 @@ class ConfigTab(QWidget):
         for n in self.APPLE:
             self.edits[n].setEnabled(enabled and mac)
         self.apple_note.setVisible(not mac)
+        # Mac App Store settings apply to macOS only; grey the whole group off-mac.
+        self.mas_box.setEnabled(enabled and mac)
         self.steam_pw.setEnabled(enabled)
         self.apple_pw.setEnabled(enabled and mac)
         self.epic_pw.setEnabled(enabled)
@@ -276,8 +299,12 @@ class ConfigTab(QWidget):
         self.load()
 
     # -- misc --------------------------------------------------------------
-    def _browse(self, name: str):
-        d = QFileDialog.getExistingDirectory(self, "Choose folder", self.value(name) or str(self.ctx.project))
+    def _browse(self, name: str, pick_file: bool = False):
+        start = self.value(name) or str(self.ctx.project)
+        if pick_file:
+            d, _ = QFileDialog.getOpenFileName(self, "Choose file", start)
+        else:
+            d = QFileDialog.getExistingDirectory(self, "Choose folder", start)
         if d:
             self.edits[name].setText(d)
 

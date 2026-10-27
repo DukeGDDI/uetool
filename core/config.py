@@ -17,6 +17,13 @@ BuildPatchTool): org_id, product_id, artifact_id, client_id (non-secret ids). Th
 client secret is env-only (UETOOL_EPIC_CLIENT_SECRET); BuildPatchTool is resolved from
 UETOOL_EPIC_BPT or the UETOOL_EPIC_SDK folder.
 
+An optional [appstore] table adds a Mac App Store target (macOS-only): bundle_id,
+app_identity / installer_identity (signing certs), provision_path, entitlements_path,
+asc_key_id / asc_issuer_id (App Store Connect API key ids). All non-secret; the API
+key .p8 is read by altool from ~/.appstoreconnect/private_keys, never stored here.
+ASC ids / key path can be overridden with UETOOL_ASC_KEY_ID / UETOOL_ASC_ISSUER_ID /
+UETOOL_ASC_API_KEY_PATH.
+
 Machine-WIDE settings are environment variables, not in any toml, because they
 are shared across every project on the machine:
   UETOOL_PYTHON       interpreter for the launcher (handled by the launcher itself)
@@ -84,6 +91,25 @@ class EpicConfig:
     client_secret: str | None      # env only (UETOOL_EPIC_CLIENT_SECRET), never a file
 
 
+@dataclass(frozen=True)
+class AppStoreConfig:
+    """Mac App Store target: sign (Apple Distribution) → productbuild → altool upload.
+    All fields are non-secret. The App Store Connect API key (.p8) is NOT here — altool
+    reads it from ~/.appstoreconnect/private_keys by filename convention; only the key id
+    and issuer id (both non-secret) are passed on the command line."""
+    bundle_id: str                 # com.d6scend
+    app_sku: str                   # App Store Connect SKU (free-form), optional
+    app_apple_id: str              # numeric App Store app id (adamId), optional
+    team_id: str                   # Apple team id (defaults to [apple] team_id)
+    app_identity: str              # "Apple Distribution: Name (TEAMID)"
+    installer_identity: str        # "3rd Party Mac Developer Installer: Name (TEAMID)"
+    provision_path: str            # path to the .provisionprofile (non-secret)
+    entitlements_path: str         # path to the MAS entitlements plist ("" = generate one)
+    asc_key_id: str                # App Store Connect API key id (non-secret)
+    asc_issuer_id: str             # ASC issuer id (non-secret)
+    api_key_path: str | None       # optional path to the .p8 (NOT its contents)
+
+
 @dataclass
 class Config:
     project_root: Path
@@ -97,6 +123,7 @@ class Config:
     build_config: str
     steam_apps: dict[str, SteamApp]  # only the configured apps, keyed by name
     epic: "EpicConfig | None"      # the [epic] target, or None when not configured
+    appstore: "AppStoreConfig | None"  # the [appstore] target, or None when not configured
     stage_subdirs: dict[str, str]  # platform -> staged subfolder, e.g. {"win": "Windows"}
     steam_user: str
     steam_password: str | None
@@ -216,6 +243,39 @@ def _load_epic(base: dict, local: dict) -> "EpicConfig | None":
     )
 
 
+def _load_appstore(base: dict, local: dict, apple_team_id: str) -> "AppStoreConfig | None":
+    """Read the [appstore] table (local wins per key). None when nothing is configured.
+    All ids/paths are non-secret; the .p8 is a file altool reads (never stored here).
+    team_id falls back to [apple] team_id; env overrides the ASC ids / key path."""
+    b, l = base.get("appstore", {}), local.get("appstore", {})
+    if not isinstance(b, dict) or not isinstance(l, dict):
+        raise SystemExit("[appstore] must be a table (bundle_id, app_identity, …).")
+    m = {**b, **l}
+
+    def s(key: str) -> str:
+        return str(m.get(key, "")).strip()
+
+    core_ids = (s("bundle_id"), s("app_identity"), s("installer_identity"),
+                s("provision_path"), s("asc_key_id"), s("asc_issuer_id"))
+    if not any(core_ids):
+        return None  # no [appstore] section, or all blank -> this project has no MAS target
+
+    key_path = os.environ.get("UETOOL_ASC_API_KEY_PATH") or s("api_key_path")
+    return AppStoreConfig(
+        bundle_id=s("bundle_id"),
+        app_sku=s("app_sku"),
+        app_apple_id=s("app_apple_id"),
+        team_id=s("team_id") or apple_team_id,
+        app_identity=s("app_identity"),
+        installer_identity=s("installer_identity"),
+        provision_path=s("provision_path"),
+        entitlements_path=s("entitlements_path"),
+        asc_key_id=os.environ.get("UETOOL_ASC_KEY_ID") or s("asc_key_id"),
+        asc_issuer_id=os.environ.get("UETOOL_ASC_ISSUER_ID") or s("asc_issuer_id"),
+        api_key_path=key_path or None,
+    )
+
+
 def load(project_root: Path) -> Config:
     root = Path(project_root).expanduser().resolve()
     base = _load_toml(root / "uetool.toml")
@@ -267,6 +327,7 @@ def load(project_root: Path) -> Config:
         build_config=build_config,
         steam_apps=_load_steam_apps(base, local),
         epic=_load_epic(base, local),
+        appstore=_load_appstore(base, local, apple_team_id),
         stage_subdirs=stage_subdirs,
         steam_user=steam_user,
         steam_password=steam_password,

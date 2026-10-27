@@ -15,7 +15,8 @@ from pathlib import Path
 from core.paths import buildpatchtool_for_sdk, host_platform, runuat_path, steamcmd_for_sdk
 
 from . import keychain, projectstate
-from .configstore import EPIC_IDS, EPIC_KEYS, ProjectConfig, steam_field
+from .configstore import (APPSTORE_KEYS, APPSTORE_REQUIRED, EPIC_IDS, EPIC_KEYS,
+                          ProjectConfig, steam_field)
 
 PASS, FIX, FAIL, NA = "pass", "fix", "fail", "na"
 
@@ -240,7 +241,41 @@ def run_checks(project: Path | str, cfg: ProjectConfig, steam_sdk: str = "", *,
             add("epic", "Epic Games Store", PASS,
                 f"artifact {epic_vals['epic_artifact_id']}; BPT {where}; secret set")
 
-    # 9. Stamped DefaultGame.ini / leftover overlay
+    # 10. Mac App Store (optional — macOS only, only when [appstore] is declared)
+    mas_vals = {name: cfg.get(name).strip() for name in APPSTORE_REQUIRED}
+    mas_set = sum(bool(v) for v in mas_vals.values())
+    if host != "mac":
+        add("appstore", "Mac App Store", NA, "Only on macOS." if mas_set
+            else "No [appstore] target configured (optional; macOS only).")
+    elif mas_set == 0:
+        add("appstore", "Mac App Store", NA, "No [appstore] target configured (optional).")
+    elif mas_set < len(APPSTORE_REQUIRED):
+        miss = [APPSTORE_KEYS[name] for name, v in mas_vals.items() if not v]
+        add("appstore", "Mac App Store", FIX, f"Incomplete [appstore]: missing {', '.join(miss)}.",
+            Action("open_config", "Open Config"))
+    else:
+        gaps = []
+        prof = cfg.get("appstore_provision_path").strip()
+        if prof and not Path(prof).expanduser().is_file():
+            gaps.append("provisioning profile not found")
+        ent = cfg.get("appstore_entitlements_path").strip()
+        if ent and not Path(ent).expanduser().is_file():
+            gaps.append("entitlements plist not found")
+        key_id = cfg.get("appstore_asc_key_id").strip()
+        key_path = cfg.get("appstore_api_key_path").strip() or environ.get("UETOOL_ASC_API_KEY_PATH", "")
+        key_dirs = [home / ".appstoreconnect/private_keys", home / ".private_keys", home / "private_keys"]
+        found_key = (any((kd / f"AuthKey_{key_id}.p8").is_file() for kd in key_dirs)
+                     or (bool(key_path) and Path(key_path).expanduser().is_file()))
+        if not found_key:
+            gaps.append(f"AuthKey_{key_id}.p8 not found in ~/.appstoreconnect/private_keys")
+        if gaps:
+            add("appstore", "Mac App Store", FIX, "; ".join(gaps) + ".",
+                Action("open_config", "Open Config"))
+        else:
+            add("appstore", "Mac App Store", PASS,
+                f"{cfg.get('appstore_bundle_id')}; profile + API key present")
+
+    # 11. Stamped DefaultGame.ini / leftover overlay
     stamped = projectstate.stamped_version(project)
     overlaid = projectstate.overlaid_files(project)
     if stamped:
